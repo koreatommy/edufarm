@@ -7,7 +7,6 @@ if (typeof window !== 'undefined') {
   // 성능 최적화 설정
   gsap.config({
     nullTargetWarn: false,
-    trialWarn: false,
   });
 
   // ScrollTrigger 전역 설정
