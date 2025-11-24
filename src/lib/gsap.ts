@@ -47,7 +47,7 @@ export function createScrollAnimation(
   return gsap.to(element, {
     ...animation,
     scrollTrigger: {
-      trigger: opts.trigger || element,
+      trigger: opts.trigger || (element as string | Element),
       start: opts.start,
       end: opts.end,
       scrub: opts.scrub,
@@ -70,7 +70,7 @@ export function createStaggerAnimation(
     ...animation,
     stagger,
     scrollTrigger: {
-      trigger: opts.trigger || elements,
+      trigger: opts.trigger || (elements as string | Element),
       start: opts.start,
       end: opts.end,
       scrub: opts.scrub,
@@ -95,7 +95,7 @@ export function createParallaxAnimation(
     },
     ease: 'none',
     scrollTrigger: {
-      trigger: opts.trigger || element,
+      trigger: opts.trigger || (element as string | Element),
       start: opts.start || 'top bottom',
       end: opts.end || 'bottom top',
       scrub: true,
