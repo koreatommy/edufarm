@@ -404,16 +404,6 @@ export default function HomePage() {
       autoRefreshEvents: 'visibilitychange,DOMContentLoaded,load',
     });
 
-    // 모바일 대응: 터치 이벤트 최적화
-    if (typeof window !== 'undefined') {
-      const isMobile = window.matchMedia('(max-width: 768px)').matches;
-      if (isMobile) {
-        ScrollTrigger.config({
-          touch: true,
-        });
-      }
-    }
-
     return () => {
       ScrollTrigger.getAll().forEach((trigger) => {
         if (trigger.vars?.onUpdate) {
