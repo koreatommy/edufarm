@@ -696,8 +696,8 @@ export default function ResultsPage() {
                     {/* 파이 그래프 */}
                     <div>
                       <h4 className="text-lg font-semibold mb-4 text-center">참여 비율 분포</h4>
-                      <div className="h-64 md:h-80">
-                        <ResponsiveContainer width="100%" height="100%">
+                      <div className="h-64 md:h-80 min-h-[256px]">
+                        <ResponsiveContainer width="100%" height="100%" minHeight={256}>
                           <PieChart>
                             <Pie
                               data={[
@@ -742,8 +742,8 @@ export default function ResultsPage() {
                     {/* 가로 막대 그래프 */}
                     <div>
                       <h4 className="text-lg font-semibold mb-4 text-center">참여 비율 비교</h4>
-                      <div className="h-64 md:h-80">
-                        <ResponsiveContainer width="100%" height="100%">
+                      <div className="h-64 md:h-80 min-h-[256px]">
+                        <ResponsiveContainer width="100%" height="100%" minHeight={256}>
                           <BarChart
                             data={[
                               { name: '중학생', 비율: 68, color: '#3b82f6' },
@@ -896,8 +896,8 @@ export default function ResultsPage() {
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="h-64 md:h-80">
-                    <ResponsiveContainer width="100%" height="100%">
+                  <div className="h-64 md:h-80 min-h-[256px]">
+                    <ResponsiveContainer width="100%" height="100%" minHeight={256}>
                       <BarChart
                         data={[
                           { name: '초등', 학급: 31, color: '#10b981' },
@@ -1052,8 +1052,8 @@ export default function ResultsPage() {
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="h-80 md:h-96">
-                    <ResponsiveContainer width="100%" height="100%">
+                  <div className="h-80 md:h-96 min-h-[320px]">
+                    <ResponsiveContainer width="100%" height="100%" minHeight={320}>
                       <RadarChart
                         data={[
                           { 
@@ -1206,8 +1206,8 @@ export default function ResultsPage() {
               </CardHeader>
               <CardContent>
                 <div className="grid md:grid-cols-2 gap-8 items-center">
-                  <div className="h-64 md:h-80 flex items-center justify-center">
-                    <ResponsiveContainer width="100%" height="100%">
+                  <div className="h-64 md:h-80 min-h-[256px] flex items-center justify-center">
+                    <ResponsiveContainer width="100%" height="100%" minHeight={256}>
                       <RadialBarChart
                         innerRadius="60%"
                         outerRadius="90%"
