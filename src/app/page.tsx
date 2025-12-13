@@ -382,6 +382,32 @@ export default function HomePage() {
   }, []);
 
   useEffect(() => {
+    // URL 해시 감지 및 스크롤 처리 (다른 페이지에서 메인 페이지로 이동했을 때)
+    const handleHashScroll = () => {
+      const hash = window.location.hash;
+      if (hash) {
+        const element = document.querySelector(hash);
+        if (element) {
+          // 페이지 로드 후 약간의 지연을 두고 스크롤
+          setTimeout(() => {
+            element.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          }, 100);
+        }
+      }
+    };
+
+    // 초기 로드 시 해시 처리
+    handleHashScroll();
+
+    // 해시 변경 감지
+    window.addEventListener('hashchange', handleHashScroll);
+
+    return () => {
+      window.removeEventListener('hashchange', handleHashScroll);
+    };
+  }, []);
+
+  useEffect(() => {
     // 스크롤 진행률 표시
     if (scrollProgressRef.current) {
       ScrollTrigger.create({

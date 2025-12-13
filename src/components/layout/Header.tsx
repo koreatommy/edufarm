@@ -3,6 +3,8 @@
 import { useState, useEffect } from 'react';
 import { Menu, X } from 'lucide-react';
 import Image from 'next/image';
+import Link from 'next/link';
+import { useRouter, usePathname } from 'next/navigation';
 import { cn } from '@/lib/utils';
 import { ThemeToggle } from '@/components/theme/ThemeToggle';
 
@@ -12,19 +14,23 @@ const menuItems = [
   { label: '안전대책', href: '#safety-measures' },
   { label: '기대효과', href: '#expected-effects' },
   { label: '운영사무국', href: '#operation-office' },
+  { label: '결과보고서', href: '/results' },
 ];
 
 export function Header() {
   const [isScrolled, setIsScrolled] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [activeSection, setActiveSection] = useState('');
+  const router = useRouter();
+  const pathname = usePathname();
 
   useEffect(() => {
     const handleScroll = () => {
       setIsScrolled(window.scrollY > 20);
 
-      // 활성 섹션 감지
-      const sections = menuItems.map((item) => item.href.substring(1));
+      // 활성 섹션 감지 (해시 링크만)
+      const hashMenuItems = menuItems.filter((item) => item.href.startsWith('#'));
+      const sections = hashMenuItems.map((item) => item.href.substring(1));
       const currentSection = sections.find((sectionId) => {
         const element = document.getElementById(sectionId);
         if (element) {
@@ -39,16 +45,36 @@ export function Header() {
       }
     };
 
-    window.addEventListener('scroll', handleScroll);
-    handleScroll(); // 초기 실행
+    // 메인 페이지에서만 스크롤 감지
+    if (pathname === '/') {
+      window.addEventListener('scroll', handleScroll);
+      handleScroll(); // 초기 실행
+    }
 
-    return () => window.removeEventListener('scroll', handleScroll);
-  }, []);
+    return () => {
+      if (pathname === '/') {
+        window.removeEventListener('scroll', handleScroll);
+      }
+    };
+  }, [pathname]);
 
   const handleMenuClick = (href: string) => {
-    const element = document.querySelector(href);
-    if (element) {
-      element.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    if (href.startsWith('#')) {
+      // 해시 링크 처리
+      if (pathname === '/') {
+        // 메인 페이지에 있으면 바로 스크롤
+        const element = document.querySelector(href);
+        if (element) {
+          element.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+      } else {
+        // 다른 페이지에 있으면 메인 페이지로 이동하면서 해시 포함
+        // window.location을 사용하여 해시를 포함한 전체 URL로 이동
+        window.location.href = '/' + href;
+      }
+    } else {
+      // 페이지 링크: Next.js 라우터로 이동
+      router.push(href);
     }
     setIsMobileMenuOpen(false);
   };
@@ -86,26 +112,48 @@ export function Header() {
           {/* Desktop Navigation */}
           <nav className="hidden md:flex items-center gap-1">
             {menuItems.map((item) => {
-              const sectionId = item.href.substring(1);
-              const isActive = activeSection === sectionId;
-              return (
-                <a
-                  key={item.href}
-                  href={item.href}
-                  onClick={(e) => {
-                    e.preventDefault();
-                    handleMenuClick(item.href);
-                  }}
-                  className={cn(
-                    'px-4 py-2 text-xl font-medium rounded-md transition-colors',
-                    isActive
-                      ? 'text-primary bg-primary/10'
-                      : 'text-muted-foreground hover:text-foreground hover:bg-accent'
-                  )}
-                >
-                  {item.label}
-                </a>
-              );
+              const isHashLink = item.href.startsWith('#');
+              const sectionId = isHashLink ? item.href.substring(1) : '';
+              const isActive = isHashLink
+                ? activeSection === sectionId
+                : pathname === item.href;
+
+              if (isHashLink) {
+                return (
+                  <a
+                    key={item.href}
+                    href={item.href}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      handleMenuClick(item.href);
+                    }}
+                    className={cn(
+                      'px-4 py-2 text-xl font-medium rounded-md transition-colors',
+                      isActive
+                        ? 'text-primary bg-primary/10'
+                        : 'text-muted-foreground hover:text-foreground hover:bg-accent'
+                    )}
+                  >
+                    {item.label}
+                  </a>
+                );
+              } else {
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    onClick={() => handleMenuClick(item.href)}
+                    className={cn(
+                      'px-4 py-2 text-xl font-medium rounded-md transition-colors',
+                      isActive
+                        ? 'text-primary bg-primary/10'
+                        : 'text-muted-foreground hover:text-foreground hover:bg-accent'
+                    )}
+                  >
+                    {item.label}
+                  </Link>
+                );
+              }
             })}
           </nav>
 
@@ -133,26 +181,48 @@ export function Header() {
           <nav className="md:hidden border-t py-4">
             <div className="flex flex-col gap-1">
               {menuItems.map((item) => {
-                const sectionId = item.href.substring(1);
-                const isActive = activeSection === sectionId;
-                return (
-                  <a
-                    key={item.href}
-                    href={item.href}
-                    onClick={(e) => {
-                      e.preventDefault();
-                      handleMenuClick(item.href);
-                    }}
-                    className={cn(
-                      'px-4 py-3 text-xl font-medium rounded-md transition-colors',
-                      isActive
-                        ? 'text-primary bg-primary/10'
-                        : 'text-muted-foreground hover:text-foreground hover:bg-accent'
-                    )}
-                  >
-                    {item.label}
-                  </a>
-                );
+                const isHashLink = item.href.startsWith('#');
+                const sectionId = isHashLink ? item.href.substring(1) : '';
+                const isActive = isHashLink
+                  ? activeSection === sectionId
+                  : pathname === item.href;
+
+                if (isHashLink) {
+                  return (
+                    <a
+                      key={item.href}
+                      href={item.href}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        handleMenuClick(item.href);
+                      }}
+                      className={cn(
+                        'px-4 py-3 text-xl font-medium rounded-md transition-colors',
+                        isActive
+                          ? 'text-primary bg-primary/10'
+                          : 'text-muted-foreground hover:text-foreground hover:bg-accent'
+                      )}
+                    >
+                      {item.label}
+                    </a>
+                  );
+                } else {
+                  return (
+                    <Link
+                      key={item.href}
+                      href={item.href}
+                      onClick={() => handleMenuClick(item.href)}
+                      className={cn(
+                        'px-4 py-3 text-xl font-medium rounded-md transition-colors',
+                        isActive
+                          ? 'text-primary bg-primary/10'
+                          : 'text-muted-foreground hover:text-foreground hover:bg-accent'
+                      )}
+                    >
+                      {item.label}
+                    </Link>
+                  );
+                }
               })}
               <div className="px-4 py-3">
                 <ThemeToggle />
