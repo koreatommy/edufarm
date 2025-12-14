@@ -135,6 +135,9 @@ export async function GET(request: NextRequest) {
         tempUrl.searchParams.set('orderBy', 'modifiedTime desc');
         tempUrl.searchParams.set('pageSize', pageSize.toString());
         tempUrl.searchParams.set('key', apiKey);
+        // 공유 드라이브 및 모든 드라이브 지원
+        tempUrl.searchParams.set('supportsAllDrives', 'true');
+        tempUrl.searchParams.set('includeItemsFromAllDrives', 'true');
         if (pageToken) {
           tempUrl.searchParams.set('pageToken', pageToken);
         }
@@ -165,6 +168,9 @@ export async function GET(request: NextRequest) {
         apiUrl.searchParams.set('orderBy', 'modifiedTime desc');
         apiUrl.searchParams.set('pageSize', pageSize.toString());
         apiUrl.searchParams.set('key', apiKey);
+        // 공유 드라이브 및 모든 드라이브 지원
+        apiUrl.searchParams.set('supportsAllDrives', 'true');
+        apiUrl.searchParams.set('includeItemsFromAllDrives', 'true');
         if (pageToken) {
           apiUrl.searchParams.set('pageToken', pageToken);
         }
@@ -185,6 +191,16 @@ export async function GET(request: NextRequest) {
         if (!fetchResponse.ok) {
           const errorData = await fetchResponse.json().catch(() => ({}));
           const errorMessage = errorData.error?.message || `HTTP ${fetchResponse.status}`;
+          
+          // 상세한 에러 로깅
+          console.error('Google Drive API 호출 실패:', {
+            status: fetchResponse.status,
+            statusText: fetchResponse.statusText,
+            error: errorData,
+            folderId: folderId,
+            query: query,
+            attempt: attempt + 1,
+          });
           
           // 리퍼러 에러인 경우 재시도하지 않음 (설정 변경 필요)
           if (errorMessage.includes('referer') || errorMessage.includes('referrer') || fetchResponse.status === 403) {
