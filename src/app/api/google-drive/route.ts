@@ -184,7 +184,7 @@ export async function GET(request: NextRequest) {
     // 페이지네이션 정보 계산
     const hasNextPage = !!response.data.nextPageToken;
     const currentPage = page;
-    const totalPages = totalCount > 0 ? Math.ceil(totalCount / limit) : null;
+    const totalPages = totalCount !== null && totalCount > 0 ? Math.ceil(totalCount / limit) : null;
     
     return NextResponse.json(
       { 
@@ -192,7 +192,7 @@ export async function GET(request: NextRequest) {
         pagination: {
           currentPage,
           limit,
-          totalCount: totalCount > 0 ? totalCount : null,
+          totalCount: totalCount !== null && totalCount > 0 ? totalCount : null,
           totalPages,
           hasNextPage,
           nextPageToken: response.data.nextPageToken || null,
