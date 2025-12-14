@@ -240,68 +240,25 @@ export async function GET(request: NextRequest) {
           continue;
         }
         
-        // 재시도 불가능한 에러이거나 마지막 시도인 경우 throw
-        throw apiError;
+        // 재시도 불가능한 에러이거나 마지막 시도인 경우 throw하여 상위 catch로 전달
+        // 에러를 Error 객체로 변환하여 상위 catch에서 처리할 수 있도록 함
+        const error = new Error(apiError?.message || 'API 호출 실패');
+        (error as any).code = apiError?.code;
+        (error as any).status = apiError?.response?.status || apiError?.status;
+        (error as any).statusText = apiError?.response?.statusText || apiError?.statusText;
+        (error as any).details = apiError?.response?.data || apiError?.response;
+        (error as any).originalError = apiError;
+        throw error;
       }
     }
     
     // 모든 재시도 실패 시
     if (!response) {
-      throw lastError || new Error('API 호출 실패');
-    }
-    } catch (apiError: any) {
-      // Google API 에러를 더 자세히 로깅
-      const errorStatus = apiError?.response?.status || apiError?.status || apiError?.code;
-      const errorData = apiError?.response?.data || apiError?.response || {};
-      const errorDetails = {
-        code: apiError?.code || errorStatus,
-        message: apiError?.message,
-        response: errorData,
-        status: errorStatus,
-        statusText: apiError?.response?.statusText || apiError?.statusText,
-      };
-      
-      console.error('Google Drive API 상세 오류:', JSON.stringify(errorDetails, null, 2));
-      console.error('폴더 ID:', folderId);
-      console.error('쿼리:', query);
-      console.error('API 키 존재:', !!apiKey);
-      console.error('환경:', process.env.NODE_ENV);
-      
-      // 에러 메시지 추출
-      let errorMessage = '알 수 없는 오류';
-      if (errorData?.error?.message) {
-        errorMessage = errorData.error.message;
-      } else if (apiError?.message) {
-        errorMessage = apiError.message;
-      }
-      
-      // 리퍼러 차단 에러 확인
-      if (errorMessage.includes('referer') || errorMessage.includes('referrer') || errorMessage.includes('Requests from referer')) {
-        console.error('=== HTTP 리퍼러 제한으로 인한 차단 ===');
-        console.error('서버 사이드 API 호출에는 HTTP 리퍼러가 없습니다.');
-        console.error('해결 방법: Google Cloud Console에서 API 키 설정 변경');
-        console.error('1. API 및 서비스 → 사용자 인증 정보 → API 키 선택');
-        console.error('2. "애플리케이션 제한사항" → "없음" 선택');
-        console.error('3. 저장 후 최대 5분 대기');
-      }
-      
-      // "File not found" 에러의 경우 더 자세한 정보 제공
-      if (errorMessage.includes('File not found') || errorStatus === 404) {
-        console.error('폴더 접근 실패 - 가능한 원인:');
-        console.error('1. 폴더 ID가 잘못되었거나 존재하지 않음');
-        console.error('2. 폴더가 공개되지 않음 (링크가 있는 모든 사용자로 공개 필요)');
-        console.error('3. API 키에 Google Drive API 권한이 없음');
-        console.error('4. API 키의 HTTP 리퍼러 제한 (서버 사이드 호출에는 리퍼러가 없음)');
-        console.error('5. API 키의 IP 주소 제한');
-      }
-      
-      // 에러를 다시 throw하여 상위에서 처리
-      const error = new Error(errorMessage);
-      (error as any).code = errorStatus;
-      (error as any).status = errorStatus;
-      (error as any).statusText = errorDetails.statusText;
-      (error as any).details = errorDetails;
-      (error as any).originalError = apiError;
+      const error = new Error(lastError?.message || 'API 호출 실패');
+      (error as any).code = lastError?.code;
+      (error as any).status = lastError?.response?.status || lastError?.status;
+      (error as any).statusText = lastError?.response?.statusText || lastError?.statusText;
+      (error as any).details = lastError?.response?.data || lastError?.response;
       throw error;
     }
 
