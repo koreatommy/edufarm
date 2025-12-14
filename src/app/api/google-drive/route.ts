@@ -194,18 +194,24 @@ export async function GET(request: NextRequest) {
         errorMessage = apiError.message;
       }
       
+      // 리퍼러 차단 에러 확인
+      if (errorMessage.includes('referer') || errorMessage.includes('referrer') || errorMessage.includes('Requests from referer')) {
+        console.error('=== HTTP 리퍼러 제한으로 인한 차단 ===');
+        console.error('서버 사이드 API 호출에는 HTTP 리퍼러가 없습니다.');
+        console.error('해결 방법: Google Cloud Console에서 API 키 설정 변경');
+        console.error('1. API 및 서비스 → 사용자 인증 정보 → API 키 선택');
+        console.error('2. "애플리케이션 제한사항" → "없음" 선택');
+        console.error('3. 저장');
+      }
+      
       // "File not found" 에러의 경우 더 자세한 정보 제공
       if (errorMessage.includes('File not found') || apiError?.response?.status === 404) {
         console.error('폴더 접근 실패 - 가능한 원인:');
         console.error('1. 폴더 ID가 잘못되었거나 존재하지 않음');
         console.error('2. 폴더가 공개되지 않음 (링크가 있는 모든 사용자로 공개 필요)');
         console.error('3. API 키에 Google Drive API 권한이 없음');
-        console.error('4. API 키의 HTTP 리퍼러 제한이 Vercel 도메인을 차단함');
+        console.error('4. API 키의 HTTP 리퍼러 제한 (서버 사이드 호출에는 리퍼러가 없음)');
         console.error('5. API 키의 IP 주소 제한');
-        console.error('해결 방법:');
-        console.error('- Google Cloud Console에서 API 키의 "애플리케이션 제한사항" 확인');
-        console.error('- "HTTP 리퍼러(웹사이트)" 제한이 있다면 Vercel 도메인 추가');
-        console.error('- 또는 "IP 주소" 제한을 제거하거나 Vercel IP 추가');
       }
       
       // 에러를 다시 throw하여 상위에서 처리
@@ -302,18 +308,46 @@ export async function GET(request: NextRequest) {
       
       // HTTP 상태 코드 기반 메시지
       const folderIdForError = folderId || '없음';
-      if (errorStatus === 403 || errorCode === 403) {
-        userFriendlyMessage = `Google Drive API 접근이 거부되었습니다. API 키 권한과 폴더 공개 설정을 확인해주세요. (폴더 ID: ${folderIdForError}) 폴더를 "링크가 있는 모든 사용자"로 공개해야 합니다.`;
+      
+      // 리퍼러 차단 에러 확인 (가장 흔한 원인)
+      if (errorMessage.includes('referer') || errorMessage.includes('referrer') || errorMessage.includes('Requests from referer')) {
+        userFriendlyMessage = `API 키의 HTTP 리퍼러 제한으로 인해 접근이 차단되었습니다. Google Cloud Console에서 API 키 설정을 변경해주세요:
+        
+1. Google Cloud Console → API 및 서비스 → 사용자 인증 정보
+2. API 키 선택
+3. "애플리케이션 제한사항" → "없음" 선택 (또는 "IP 주소" 선택)
+4. 저장
+
+서버 사이드 API 호출에는 HTTP 리퍼러가 없으므로 "웹사이트" 제한을 사용할 수 없습니다.`;
+      } else if (errorStatus === 403 || errorCode === 403) {
+        userFriendlyMessage = `Google Drive API 접근이 거부되었습니다. (폴더 ID: ${folderIdForError})
+        
+가능한 원인:
+1. API 키의 HTTP 리퍼러 제한 (서버 사이드 호출에는 리퍼러가 없음)
+2. 폴더가 공개되지 않음 (링크가 있는 모든 사용자로 공개 필요)
+3. API 키 권한 부족
+
+해결 방법:
+- Google Cloud Console에서 API 키의 "애플리케이션 제한사항"을 "없음"으로 변경`;
       } else if (errorStatus === 401 || errorCode === 401) {
         userFriendlyMessage = 'Google Drive API 인증에 실패했습니다. API 키가 유효한지 확인해주세요.';
       } else if (errorStatus === 404 || errorCode === 404) {
-        userFriendlyMessage = `폴더를 찾을 수 없습니다. 폴더 ID를 확인해주세요.: ${errorMessage} (폴더 ID: ${folderIdForError}) 폴더가 공개되어 있는지 확인하세요.`;
+        userFriendlyMessage = `폴더를 찾을 수 없습니다. (폴더 ID: ${folderIdForError})
+        
+확인 사항:
+1. 폴더 ID가 올바른지 확인
+2. 폴더가 "링크가 있는 모든 사용자"로 공개되어 있는지 확인`;
       } else if (errorMessage.includes('API key not valid')) {
         userFriendlyMessage = 'API 키가 유효하지 않습니다. Google Cloud Console에서 API 키를 확인해주세요.';
       } else if (errorMessage.includes('insufficient permissions') || errorMessage.includes('permission denied')) {
         userFriendlyMessage = 'API 키에 Google Drive API 접근 권한이 없습니다. Google Cloud Console에서 Drive API를 활성화해주세요.';
       } else if (errorMessage.includes('File not found')) {
-        userFriendlyMessage = `폴더를 찾을 수 없습니다. 폴더 ID(${folderIdForError})가 올바른지, 그리고 폴더가 "링크가 있는 모든 사용자"로 공개되어 있는지 확인해주세요.`;
+        userFriendlyMessage = `폴더를 찾을 수 없습니다. (폴더 ID: ${folderIdForError})
+        
+확인 사항:
+1. 폴더 ID가 올바른지 확인
+2. 폴더가 "링크가 있는 모든 사용자"로 공개되어 있는지 확인
+3. API 키의 HTTP 리퍼러 제한 확인`;
       }
       
       // 개발 환경에서 더 자세한 정보 포함
