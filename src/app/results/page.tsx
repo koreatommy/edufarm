@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, useCallback } from 'react';
 import { Header } from '@/components/layout/Header';
 import { Footer } from '@/components/layout/Footer';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -41,6 +41,7 @@ import {
   Image as ImageIcon,
   Video,
   X as XIcon,
+  RefreshCw,
 } from 'lucide-react';
 import { PieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip, BarChart, Bar, XAxis, YAxis, CartesianGrid, RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis, RadialBarChart, RadialBar, PolarAngleAxis as RadialAngleAxis } from 'recharts';
 
@@ -369,15 +370,16 @@ export default function ResultsPage() {
     };
   }, []);
 
-  useEffect(() => {
-    // Google Drive에서 이미지 불러오기
-    const fetchImages = async () => {
+  // Google Drive에서 이미지 불러오기 함수
+  const fetchImages = useCallback(async () => {
       try {
         setIsLoadingImages(true);
         setImageError(null);
         
         // limit은 항상 30으로 고정
-        const response = await fetch(`/api/google-drive?page=${currentPage}&limit=30`);
+        // 첫 페이지가 아니면 skipCount=true로 설정하여 전체 개수 계산 생략 (성능 향상)
+        const skipCount = currentPage > 1;
+        const response = await fetch(`/api/google-drive?page=${currentPage}&limit=30&skipCount=${skipCount}`);
         
         // Content-Type 헤더 확인
         const contentType = response.headers.get('content-type');
@@ -464,44 +466,12 @@ export default function ResultsPage() {
       } finally {
         setIsLoadingImages(false);
       }
-    };
-
-    // 30초마다 자동 새로고침 (실시간 업데이트)
-    let intervalId: NodeJS.Timeout;
-
-    // Page Visibility API: 탭이 보이는 상태일 때만 polling 실행
-    const handleVisibilityChange = () => {
-      if (document.hidden) {
-        // 탭이 백그라운드로 이동하면 interval 중지
-        if (intervalId) {
-          clearInterval(intervalId);
-        }
-      } else {
-        // 탭이 다시 포그라운드로 이동하면 즉시 새로고침하고 interval 재시작
-        fetchImages();
-        intervalId = setInterval(fetchImages, 30000); // 30초
-      }
-    };
-
-    // 초기 로드
-    fetchImages();
-
-    // 페이지가 보이는 상태일 때만 자동 새로고침 활성화
-    if (!document.hidden) {
-      intervalId = setInterval(fetchImages, 30000); // 30초
-    }
-
-    // Visibility change 이벤트 리스너 등록
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-
-    // Cleanup: 컴포넌트 언마운트 시 interval 및 이벤트 리스너 제거
-    return () => {
-      if (intervalId) {
-        clearInterval(intervalId);
-      }
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-    };
   }, [currentPage]);
+
+  // 초기 로드 및 페이지 변경 시 이미지 불러오기
+  useEffect(() => {
+    fetchImages();
+  }, [fetchImages]);
 
   return (
     <>
@@ -2155,6 +2125,15 @@ export default function ResultsPage() {
               <h3 className="text-xl md:text-2xl font-semibold mb-6 flex items-center gap-3">
                 <ImageIcon className="w-6 h-6 text-primary" />
                 현장 교육 사진
+                <button
+                  onClick={fetchImages}
+                  disabled={isLoadingImages}
+                  className="ml-auto p-2 hover:bg-muted rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  aria-label="사진 새로고침"
+                  title="사진 새로고침"
+                >
+                  <RefreshCw className={`w-5 h-5 ${isLoadingImages ? 'animate-spin' : ''}`} />
+                </button>
               </h3>
               
               {isLoadingImages && (

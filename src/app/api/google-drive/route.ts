@@ -30,6 +30,13 @@ interface ApiResponse {
 }
 
 /**
+ * 전체 개수 캐시 (메모리 기반, 서버 재시작 시 초기화)
+ * 실제 프로덕션에서는 Redis 등을 사용하는 것이 좋습니다.
+ */
+let totalItemsCache: { count: number; timestamp: number } | null = null;
+const CACHE_DURATION = 5 * 60 * 1000; // 5분
+
+/**
  * Google Drive Service Account 인증 및 API 클라이언트 생성
  */
 function getGoogleDriveClient() {
@@ -61,6 +68,7 @@ function getGoogleDriveClient() {
  * 
  * Query Parameters:
  * - page: 현재 페이지 번호 (기본값: 1)
+ * - skipCount: 전체 개수 계산 생략 여부 (기본값: false, true 시 성능 향상)
  * 
  * Google Drive 폴더에서 이미지 파일 목록을 가져옵니다.
  * 페이지당 30개의 이미지를 반환합니다.
@@ -70,6 +78,7 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const page = parseInt(searchParams.get('page') || '1', 10);
     const limit = parseInt(searchParams.get('limit') || '30', 10);
+    const skipCount = searchParams.get('skipCount') === 'true';
 
     // limit을 30으로 고정
     const fixedLimit = 30;
@@ -185,43 +194,74 @@ Google Drive에서 폴더를 공유하고 Service Account(${serviceAccountEmail}
       throw folderError;
     }
 
-    // 전체 이미지 개수 조회 (모든 페이지를 순회하여 정확한 개수 계산)
+    // 전체 이미지 개수 조회 (캐싱 및 선택적 계산)
     let totalItems = 0;
-    let nextPageToken: string | undefined = undefined;
+    let totalPages = 0;
     
-    // eslint-disable-next-line no-constant-condition
-    while (true) {
-      const countResponse = await drive.files.list({
-        q: `'${folderId}' in parents and mimeType contains 'image/' and trashed = false`,
-        fields: 'nextPageToken, files(id)',
-        pageSize: 1000, // Google Drive API 최대값
-        pageToken: nextPageToken,
-      }) as { data: { files?: Array<{ id?: string | null }>; nextPageToken?: string | null } };
+    // 캐시 확인
+    const now = Date.now();
+    const useCache = totalItemsCache && (now - totalItemsCache.timestamp) < CACHE_DURATION;
+    
+    if (useCache && !skipCount) {
+      // 캐시된 값 사용
+      totalItems = totalItemsCache.count;
+      totalPages = Math.ceil(totalItems / fixedLimit);
+    } else if (!skipCount) {
+      // 전체 개수 계산 (최적화: pageSize를 최대값으로 사용)
+      let nextPageToken: string | undefined = undefined;
       
-      const files = countResponse.data.files || [];
-      totalItems += files.length;
-      nextPageToken = countResponse.data.nextPageToken || undefined;
+      // eslint-disable-next-line no-constant-condition
+      while (true) {
+        const countResponse = await drive.files.list({
+          q: `'${folderId}' in parents and mimeType contains 'image/' and trashed = false`,
+          fields: 'nextPageToken, files(id)',
+          pageSize: 1000, // Google Drive API 최대값
+          pageToken: nextPageToken,
+        }) as { data: { files?: Array<{ id?: string | null }>; nextPageToken?: string | null } };
+        
+        const files = countResponse.data.files || [];
+        totalItems += files.length;
+        nextPageToken = countResponse.data.nextPageToken || undefined;
+        
+        if (!nextPageToken) break;
+      }
       
-      if (!nextPageToken) break;
+      // 캐시 업데이트
+      totalItemsCache = {
+        count: totalItems,
+        timestamp: now,
+      };
+      
+      totalPages = Math.ceil(totalItems / fixedLimit);
+    } else {
+      // skipCount가 true인 경우: 추정치 사용 (현재 페이지 기준)
+      // 정확한 개수는 모르지만, 다음 페이지 존재 여부로 추정
+      totalItems = 0; // 알 수 없음
+      totalPages = 0; // 알 수 없음
     }
 
-    const totalPages = Math.ceil(totalItems / fixedLimit);
-
-    // 현재 페이지 데이터 조회 (pageToken을 사용하여 해당 페이지까지 이동)
+    // 현재 페이지 데이터 조회 (최적화된 페이지 이동)
     let currentPageToken: string | undefined = undefined;
     
-    // 1페이지가 아니면 해당 페이지까지 pageToken을 순차적으로 이동
+    // 페이지 이동 최적화: 1페이지가 아니면 해당 페이지까지 pageToken을 순차적으로 이동
+    // 하지만 이미지 데이터는 가져오지 않고 nextPageToken만 가져와서 API 호출 최소화
     if (page > 1) {
+      // 이전 페이지들의 nextPageToken만 수집 (데이터는 가져오지 않음)
       for (let i = 1; i < page; i++) {
         const tempResponse = await drive.files.list({
           q: `'${folderId}' in parents and mimeType contains 'image/' and trashed = false`,
-          fields: 'nextPageToken',
+          fields: 'nextPageToken', // nextPageToken만 가져와서 최소한의 데이터만 전송
           pageSize: fixedLimit,
           orderBy: 'modifiedTime desc',
           pageToken: currentPageToken,
         }) as { data: { nextPageToken?: string | null } };
+        
         currentPageToken = tempResponse.data.nextPageToken || undefined;
-        if (!currentPageToken) break; // 더 이상 페이지가 없으면 중단
+        if (!currentPageToken) {
+          // 더 이상 페이지가 없으면 중단
+          // 이 경우 현재 페이지가 마지막 페이지보다 큰 것이므로 빈 결과 반환
+          break;
+        }
       }
     }
 
@@ -249,6 +289,14 @@ Google Drive에서 폴더를 공유하고 Service Account(${serviceAccountEmail}
 
     const files = response.data.files || [];
     const hasNextPage = !!response.data.nextPageToken;
+    
+    // skipCount가 true이고 totalItems가 0인 경우, 추정치 계산
+    if (skipCount && totalItems === 0) {
+      // 현재 페이지 번호와 다음 페이지 존재 여부로 추정
+      // 정확하지 않지만 대략적인 값 제공
+      totalItems = page * fixedLimit + (hasNextPage ? fixedLimit : files.length);
+      totalPages = Math.ceil(totalItems / fixedLimit);
+    }
 
     // 이미지 메타데이터 생성
     const images: DriveImage[] = files.map((file) => {
