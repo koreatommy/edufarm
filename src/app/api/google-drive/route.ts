@@ -113,7 +113,7 @@ export async function GET(request: NextRequest) {
     try {
       const folderInfo = await drive.files.get({
         fileId: folderId,
-        fields: 'id, name, mimeType, shared',
+        fields: 'id, name, mimeType, shared, permissions',
       });
       console.log('✅ 폴더 접근 성공:', folderInfo.data.name);
     } catch (folderError: any) {
@@ -123,27 +123,42 @@ export async function GET(request: NextRequest) {
         errors: folderError?.errors,
       });
       
+      // Service Account가 접근 가능한 폴더 목록 확인 (디버깅용)
+      try {
+        const accessibleFiles = await drive.files.list({
+          q: "mimeType='application/vnd.google-apps.folder' and trashed = false",
+          fields: 'files(id, name)',
+          pageSize: 5,
+        });
+        console.log('접근 가능한 폴더 목록 (최대 5개):', accessibleFiles.data.files?.map(f => ({ id: f.id, name: f.name })));
+      } catch (listError) {
+        console.error('폴더 목록 조회 실패:', listError);
+      }
+      
       // 404 오류는 실제로는 권한 문제일 수 있습니다
       if (folderError?.code === 404) {
         const shareLink = `https://drive.google.com/drive/folders/${folderId}`;
         const serviceAccountEmail = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL?.trim() || '설정되지 않음';
         throw new Error(`폴더를 찾을 수 없습니다 (404). 
 
-이는 보통 Service Account에 폴더 접근 권한이 없어서 발생합니다.
+⚠️ 중요: Google Drive에서 폴더를 Service Account와 공유해야 합니다.
 
-🔧 해결 방법:
+🔧 해결 방법 (단계별):
 1. 다음 링크로 폴더 열기: ${shareLink}
-2. 폴더 우클릭 → "공유" 클릭
-3. 이메일 입력: ${serviceAccountEmail}
-4. 권한: "뷰어" 선택
-5. "완료" 클릭
-6. 몇 분 후 다시 시도 (권한 적용 시간 필요)
+2. 폴더 선택 후 상단 "공유" 버튼 클릭 (또는 우클릭 → "공유")
+3. "사용자 및 그룹 추가" 필드에 정확히 입력:
+   ${serviceAccountEmail}
+4. 권한 드롭다운에서 "뷰어" 선택
+5. "완료" 또는 "공유" 클릭
+6. 공유 목록에 ${serviceAccountEmail}이 "뷰어"로 표시되는지 확인
+7. 몇 분 후 다시 시도 (권한 적용 시간 필요)
 
 📋 확인 사항:
 - 폴더 ID: ${folderId}
 - Service Account: ${serviceAccountEmail}
 - 폴더가 삭제되지 않았는지 확인
-- 공유 목록에 Service Account가 있는지 확인`);
+- 공유 목록에 Service Account가 있는지 확인
+- 이메일 주소를 정확히 입력했는지 확인 (오타 없이)`);
       } else if (folderError?.code === 403) {
         const serviceAccountEmail = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL?.trim() || '설정되지 않음';
         throw new Error(`폴더 접근 권한이 없습니다 (403). 
