@@ -64,12 +64,26 @@ export async function GET(request: NextRequest) {
     const limit = parseInt(searchParams.get('limit') || '30', 10);
     const pageSize = Math.min(limit, 100); // Google Drive API 최대 100
     
+    // 폴더 ID 검증 및 로깅
+    if (!folderId || folderId.trim() === '') {
+      return NextResponse.json(
+        { error: '폴더 ID가 비어있습니다. DRIVE_FOLDER_ID 환경 변수를 확인해주세요.' },
+        { status: 500 }
+      );
+    }
+
     // 폴더 내 이미지 파일 목록 조회
     const query = `'${folderId}' in parents and mimeType contains 'image/' and trashed=false`;
     
-    if (process.env.NODE_ENV === 'development') {
-      console.log('Google Drive API 쿼리:', query, { page, limit, pageSize });
-    }
+    // 디버깅 로그 (프로덕션에서도 폴더 ID 확인용)
+    console.log('Google Drive API 요청:', {
+      folderId: folderId,
+      folderIdLength: folderId.length,
+      query: query,
+      page: page,
+      limit: limit,
+      pageSize: pageSize,
+    });
     
     // 전체 이미지 개수 조회 (선택적, 성능 고려하여 간단하게)
     // Google Drive API는 전체 개수를 직접 반환하지 않으므로
@@ -122,6 +136,8 @@ export async function GET(request: NextRequest) {
       };
       
       console.error('Google Drive API 상세 오류:', JSON.stringify(errorDetails, null, 2));
+      console.error('폴더 ID:', folderId);
+      console.error('쿼리:', query);
       
       // 에러 메시지 추출
       let errorMessage = '알 수 없는 오류';
@@ -225,15 +241,18 @@ export async function GET(request: NextRequest) {
       
       // HTTP 상태 코드 기반 메시지
       if (errorStatus === 403 || errorCode === 403) {
-        userFriendlyMessage = 'Google Drive API 접근이 거부되었습니다. API 키 권한과 폴더 공개 설정을 확인해주세요.';
+        userFriendlyMessage = `Google Drive API 접근이 거부되었습니다. API 키 권한과 폴더 공개 설정을 확인해주세요. (폴더 ID: ${folderId}) 폴더를 "링크가 있는 모든 사용자"로 공개해야 합니다.`;
       } else if (errorStatus === 401 || errorCode === 401) {
         userFriendlyMessage = 'Google Drive API 인증에 실패했습니다. API 키가 유효한지 확인해주세요.';
       } else if (errorStatus === 404 || errorCode === 404) {
-        userFriendlyMessage = '폴더를 찾을 수 없습니다. 폴더 ID를 확인해주세요.';
+        const folderIdForError = folderId || '없음';
+        userFriendlyMessage = `폴더를 찾을 수 없습니다. 폴더 ID를 확인해주세요.: ${errorMessage} (폴더 ID: ${folderIdForError}) 폴더가 공개되어 있는지 확인하세요.`;
       } else if (errorMessage.includes('API key not valid')) {
         userFriendlyMessage = 'API 키가 유효하지 않습니다. Google Cloud Console에서 API 키를 확인해주세요.';
       } else if (errorMessage.includes('insufficient permissions') || errorMessage.includes('permission denied')) {
         userFriendlyMessage = 'API 키에 Google Drive API 접근 권한이 없습니다. Google Cloud Console에서 Drive API를 활성화해주세요.';
+      } else if (errorMessage.includes('File not found')) {
+        userFriendlyMessage = `폴더를 찾을 수 없습니다. 폴더 ID(${folderId})가 올바른지, 그리고 폴더가 "링크가 있는 모든 사용자"로 공개되어 있는지 확인해주세요.`;
       }
       
       // 개발 환경에서 더 자세한 정보 포함
