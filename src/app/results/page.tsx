@@ -383,14 +383,9 @@ export default function ResultsPage() {
             errorMessage += ` (상태 코드: ${data.status})`;
           }
           
-          // 개발 환경에서 더 자세한 정보 표시
-          if (process.env.NODE_ENV === 'development' && data.details && Object.keys(data.details).length > 0) {
+          // 에러 상세 정보 로깅 (details가 있고 비어있지 않은 경우만)
+          if (data.details && typeof data.details === 'object' && Object.keys(data.details).length > 0) {
             console.error('API 에러 상세:', data.details);
-          }
-          
-          // 프로덕션 환경에서도 유용한 에러 정보 로깅 (details가 비어있지 않은 경우)
-          if (data.details && Object.keys(data.details).length > 0) {
-            console.error('API 에러 상세 정보:', JSON.stringify(data.details, null, 2));
           }
           
           throw new Error(errorMessage);
