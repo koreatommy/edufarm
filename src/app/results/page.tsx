@@ -302,6 +302,33 @@ interface GoogleDriveImage {
   apiUrl?: string;
 }
 
+/**
+ * Google Drive 썸네일 URL의 크기를 조정하는 함수
+ * @param thumbnailLink 원본 썸네일 URL
+ * @param size 원하는 크기 (픽셀 단위, 기본값: 640)
+ * @returns 크기가 조정된 썸네일 URL
+ */
+function getOptimizedThumbnailUrl(thumbnailLink: string, size: number = 640): string {
+  if (!thumbnailLink) return '';
+  
+  // Google Drive 썸네일 URL은 보통 =s220 같은 파라미터를 포함
+  // 이를 원하는 크기로 변경
+  // 예: https://.../thumbnail?sz=s220 -> https://.../thumbnail?sz=s640
+  const sizeParam = `=s${size}`;
+  
+  // URL에 이미 크기 파라미터가 있는지 확인
+  const sizePattern = /=s\d+/;
+  if (sizePattern.test(thumbnailLink)) {
+    // 기존 크기 파라미터를 새로운 크기로 교체
+    return thumbnailLink.replace(sizePattern, sizeParam);
+  }
+  
+  // 크기 파라미터가 없으면 추가
+  // URL에 이미 쿼리 파라미터가 있는지 확인
+  const separator = thumbnailLink.includes('?') ? '&' : '?';
+  return `${thumbnailLink}${separator}sz=s${size}`;
+}
+
 export default function ResultsPage() {
   const { resolvedTheme } = useTheme();
   const textColor = resolvedTheme === 'dark' ? '#e4e4e7' : '#18181b'; // zinc-200 for dark, zinc-900 for light
@@ -2177,8 +2204,9 @@ export default function ResultsPage() {
                       wide: 'aspect-[4/3] md:aspect-[3/2]',
                     };
                     
-                    // 갤러리 목록에서도 고해상도 이미지 사용 (프록시 URL)
-                    const imageUrl = image.downloadUrl || image.apiUrl || image.thumbnailLink || image.webViewLink;
+                    // 갤러리 목록에서는 최적화된 썸네일(640px)을 우선 사용하여 빠른 로딩 (클릭 시 원본 이미지 표시)
+                    const optimizedThumbnail = image.thumbnailLink ? getOptimizedThumbnailUrl(image.thumbnailLink, 640) : '';
+                    const imageUrl = optimizedThumbnail || image.webViewLink || image.downloadUrl || image.apiUrl;
                     
                     return (
                       <div
@@ -2362,6 +2390,7 @@ export default function ResultsPage() {
                     <div className="relative w-full h-full flex items-center justify-center p-0">
                       <img
                         key={selectedImage.id}
+                        // 모달에서는 원본 이미지를 우선 사용하여 고해상도 이미지 제공
                         src={selectedImage.apiUrl || selectedImage.downloadUrl || selectedImage.thumbnailLink || selectedImage.webViewLink}
                         alt={selectedImage.name || '스마트팜 교육 현장'}
                         className="w-auto h-auto"
