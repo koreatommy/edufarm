@@ -126,6 +126,7 @@ export async function GET(request: NextRequest) {
       // 404 오류는 실제로는 권한 문제일 수 있습니다
       if (folderError?.code === 404) {
         const shareLink = `https://drive.google.com/drive/folders/${folderId}`;
+        const serviceAccountEmail = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL?.trim() || '설정되지 않음';
         throw new Error(`폴더를 찾을 수 없습니다 (404). 
 
 이는 보통 Service Account에 폴더 접근 권한이 없어서 발생합니다.
@@ -133,19 +134,21 @@ export async function GET(request: NextRequest) {
 🔧 해결 방법:
 1. 다음 링크로 폴더 열기: ${shareLink}
 2. 폴더 우클릭 → "공유" 클릭
-3. 이메일 입력: ${process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL}
+3. 이메일 입력: ${serviceAccountEmail}
 4. 권한: "뷰어" 선택
 5. "완료" 클릭
-6. 서버 재시작 후 다시 시도
+6. 몇 분 후 다시 시도 (권한 적용 시간 필요)
 
 📋 확인 사항:
 - 폴더 ID: ${folderId}
-- Service Account: ${process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL}
-- 폴더가 삭제되지 않았는지 확인`);
+- Service Account: ${serviceAccountEmail}
+- 폴더가 삭제되지 않았는지 확인
+- 공유 목록에 Service Account가 있는지 확인`);
       } else if (folderError?.code === 403) {
+        const serviceAccountEmail = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL?.trim() || '설정되지 않음';
         throw new Error(`폴더 접근 권한이 없습니다 (403). 
 
-Google Drive에서 폴더를 공유하고 Service Account(${process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL})에 '뷰어' 권한을 부여해주세요.`);
+Google Drive에서 폴더를 공유하고 Service Account(${serviceAccountEmail})에 '뷰어' 권한을 부여해주세요.`);
       }
       throw folderError;
     }
