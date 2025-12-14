@@ -1,0 +1,10 @@
+# Vercel 로그인 후 다음 명령어를 실행하세요:
+
+# 1. GOOGLE_API_KEY 추가
+echo "AIzaSyCUReeE6I-Mg1bBQs49tpnTIXwGD6MG6FY" | vercel env add GOOGLE_API_KEY production preview development
+
+# 2. DRIVE_FOLDER_ID 추가  
+echo "1lM28bdwDO5QaKlrqMW2uNHiXh1_gk7oT" | vercel env add DRIVE_FOLDER_ID production preview development
+
+# 3. 환경 변수 확인
+vercel env ls
