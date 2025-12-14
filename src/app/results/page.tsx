@@ -5,6 +5,13 @@ import { Header } from '@/components/layout/Header';
 import { Footer } from '@/components/layout/Footer';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { useTheme } from '@/components/theme/ThemeProvider';
 import {
   FileText,
@@ -33,6 +40,7 @@ import {
   Play,
   Image as ImageIcon,
   Video,
+  X as XIcon,
 } from 'lucide-react';
 import { PieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip, BarChart, Bar, XAxis, YAxis, CartesianGrid, RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis, RadialBarChart, RadialBar, PolarAngleAxis as RadialAngleAxis } from 'recharts';
 
@@ -284,9 +292,32 @@ function CountUp({ end, duration = 2000, className = '' }: { end: number; durati
   );
 }
 
+interface GoogleDriveImage {
+  id: string;
+  name: string;
+  thumbnailLink: string;
+  webViewLink: string;
+  downloadUrl: string;
+  downloadUrl2?: string;
+  apiUrl?: string;
+}
+
 export default function ResultsPage() {
   const { resolvedTheme } = useTheme();
   const textColor = resolvedTheme === 'dark' ? '#e4e4e7' : '#18181b'; // zinc-200 for dark, zinc-900 for light
+  const [galleryImages, setGalleryImages] = useState<GoogleDriveImage[]>([]);
+  const [isLoadingImages, setIsLoadingImages] = useState(true);
+  const [imageError, setImageError] = useState<string | null>(null);
+  const [selectedImage, setSelectedImage] = useState<GoogleDriveImage | null>(null);
+  const [imageDimensions, setImageDimensions] = useState<{ width: number; height: number } | null>(null);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pagination, setPagination] = useState<{
+    currentPage: number;
+    limit: number;
+    totalCount: number | null;
+    totalPages: number | null;
+    hasNextPage: boolean;
+  } | null>(null);
 
   useEffect(() => {
     // 부드러운 스크롤 처리
@@ -311,13 +342,112 @@ export default function ResultsPage() {
     };
   }, []);
 
+  useEffect(() => {
+    // Google Drive에서 이미지 불러오기
+    const fetchImages = async () => {
+      try {
+        setIsLoadingImages(true);
+        setImageError(null);
+        
+        const response = await fetch(`/api/google-drive?page=${currentPage}&limit=30`);
+        
+        // Content-Type 헤더 확인
+        const contentType = response.headers.get('content-type');
+        
+        // 응답 본문을 텍스트로 읽기 (한 번만)
+        const responseText = await response.text();
+        
+        // 응답 상태 확인
+        if (!response.ok) {
+          // HTML 응답인 경우 (404 등) - API 엔드포인트가 없는 경우
+          if (contentType && contentType.includes('text/html')) {
+            // API 엔드포인트가 없을 때는 조용히 처리하고 빈 배열 반환
+            setGalleryImages([]);
+            setPagination(null);
+            setIsLoadingImages(false);
+            return;
+          }
+          throw new Error(`서버 오류 (${response.status}): ${responseText.substring(0, 200)}`);
+        }
+        
+        // Content-Type이 JSON이 아닌 경우
+        if (!contentType || !contentType.includes('application/json')) {
+          console.error('예상치 못한 응답 형식:', contentType);
+          console.error('응답 본문 (처음 200자):', responseText.substring(0, 200));
+          throw new Error(`서버가 JSON 형식이 아닌 응답을 반환했습니다. (Content-Type: ${contentType})`);
+        }
+        
+        // 응답 본문을 JSON으로 파싱
+        let data;
+        
+        try {
+          data = responseText ? JSON.parse(responseText) : {};
+        } catch (parseError) {
+          console.error('JSON 파싱 오류:', parseError);
+          console.error('응답 본문 (처음 200자):', responseText.substring(0, 200));
+          throw new Error(`서버 응답을 파싱할 수 없습니다: ${responseText.substring(0, 100)}`);
+        }
+        
+        // 전체 응답 정보를 콘솔에 출력 (디버깅용)
+        console.log('API 응답 정보:', {
+          status: response.status,
+          statusText: response.statusText,
+          ok: response.ok,
+          contentType: contentType,
+          data: data,
+        });
+        
+        if (data.error) {
+          // 응답 본문에서 에러 메시지 추출
+          let errorMessage = data.error || `서버 오류 (${response.status})`;
+          
+          // 추가 정보가 있으면 포함
+          if (data.message && data.message !== errorMessage) {
+            errorMessage += `: ${data.message}`;
+          } else if (data.status && data.status !== response.status) {
+            errorMessage += ` (상태 코드: ${data.status})`;
+          }
+          
+          // 개발 환경에서 더 자세한 정보 표시
+          if (process.env.NODE_ENV === 'development' && data.details) {
+            console.error('API 에러 상세:', data.details);
+          }
+          
+          throw new Error(errorMessage);
+        }
+        
+        setGalleryImages(data.images || []);
+        setPagination(data.pagination || null);
+      } catch (error) {
+        // 404 에러는 이미 위에서 처리되므로 여기서는 다른 에러만 처리
+        const errorMessage = error instanceof Error 
+          ? error.message 
+          : '알 수 없는 오류가 발생했습니다.';
+        
+        // 개발 환경에서만 콘솔 에러 출력
+        if (process.env.NODE_ENV === 'development') {
+          console.error('이미지 로드 오류:', error);
+        }
+        
+        setImageError(errorMessage);
+        // 에러 발생 시 빈 배열로 설정
+        setGalleryImages([]);
+        setPagination(null);
+      } finally {
+        setIsLoadingImages(false);
+      }
+    };
+
+    fetchImages();
+  }, [currentPage]);
+
   return (
     <>
       <Header />
       <main className="min-h-screen bg-background">
         {/* 헤더 섹션 */}
         <header className="border-b border-border bg-gradient-to-b from-primary/5 to-transparent py-12 md:py-16">
-          <div className="container mx-auto max-w-[980px] px-4">
+          <div className="container mx-auto max-w-6xl px-4">
             <div className="flex items-center gap-4 mb-4">
               <div className="p-3 bg-primary/10 rounded-xl">
                 <FileText className="w-8 h-8 text-primary" />
@@ -333,7 +463,7 @@ export default function ResultsPage() {
         </header>
 
         {/* 본문 */}
-        <div className="container mx-auto max-w-[980px] px-4 py-8 md:py-12 pb-16">
+        <div className="container mx-auto max-w-6xl px-4 py-8 md:py-12 pb-16">
           {/* 목차 - 모던한 디자인 */}
           <Card className="mb-12 border-2 border-primary/20 bg-gradient-to-br from-primary/5 via-background to-primary/5 shadow-2xl overflow-hidden">
             <CardHeader className="bg-gradient-to-r from-primary/10 to-primary/5 border-b border-primary/20">
@@ -1964,72 +2094,169 @@ export default function ResultsPage() {
                 <ImageIcon className="w-6 h-6 text-primary" />
                 현장 교육 사진
               </h3>
-              <div className="columns-2 md:columns-3 lg:columns-4 gap-2 md:gap-3">
-                {[
-                  // 스마트팜, 교육, 식물, 농업 관련 무료 이미지들
-                  { url: 'https://images.unsplash.com/photo-1464226184884-fa280b87c399?w=800&h=800&fit=crop', size: 'tall' },
-                  { url: 'https://images.unsplash.com/photo-1581091226825-a6a2a5aee158?w=800&h=1200&fit=crop', size: 'wide' }, // 2번 수정
-                  { url: 'https://images.unsplash.com/photo-1503676260728-1c00da094a0b?w=800&h=800&fit=crop', size: 'square' },
-                  { url: 'https://images.unsplash.com/photo-1522202176988-66273c2fd55f?w=800&h=600&fit=crop', size: 'wide' },
-                  { url: 'https://images.unsplash.com/photo-1516321318423-f06f85e504b3?w=800&h=1000&fit=crop', size: 'tall' },
-                  { url: 'https://images.unsplash.com/photo-1524178232363-1fb2b075b655?w=800&h=800&fit=crop', size: 'square' },
-                  { url: 'https://images.unsplash.com/photo-1509062522246-3755977927d7?w=800&h=900&fit=crop', size: 'tall' },
-                  { url: 'https://images.unsplash.com/photo-1552664730-d307ca884978?w=800&h=1200&fit=crop', size: 'tall' }, // 8번 수정
-                  { url: 'https://images.unsplash.com/photo-1516321318423-f06f85e504b3?w=800&h=800&fit=crop', size: 'square' },
-                  { url: 'https://images.unsplash.com/photo-1522202176988-66273c2fd55f?w=800&h=1100&fit=crop', size: 'tall' },
-                  { url: 'https://images.unsplash.com/photo-1464226184884-fa280b87c399?w=800&h=700&fit=crop', size: 'wide' },
-                  { url: 'https://images.unsplash.com/photo-1503676260728-1c00da094a0b?w=800&h=950&fit=crop', size: 'tall' },
-                  { url: 'https://images.unsplash.com/photo-1524178232363-1fb2b075b655?w=800&h=800&fit=crop', size: 'square' },
-                  { url: 'https://images.unsplash.com/photo-1509062522246-3755977927d7?w=800&h=850&fit=crop', size: 'tall' },
-                  { url: 'https://images.unsplash.com/photo-1551836022-d5d88e9218df?w=800&h=1200&fit=crop', size: 'tall' }, // 15번 수정
-                  { url: 'https://images.unsplash.com/photo-1516321318423-f06f85e504b3?w=800&h=800&fit=crop', size: 'square' },
-                  { url: 'https://images.unsplash.com/photo-1464226184884-fa280b87c399?w=800&h=1050&fit=crop', size: 'tall' },
-                  { url: 'https://images.unsplash.com/photo-1522202176988-66273c2fd55f?w=800&h=750&fit=crop', size: 'wide' },
-                  { url: 'https://images.unsplash.com/photo-1503676260728-1c00da094a0b?w=800&h=900&fit=crop', size: 'tall' },
-                  { url: 'https://images.unsplash.com/photo-1524178232363-1fb2b075b655?w=800&h=800&fit=crop', size: 'square' },
-                ].map((item, index) => {
-                  const sizeClasses = {
-                    square: 'aspect-square',
-                    tall: 'aspect-[3/4] md:aspect-[2/3]',
-                    wide: 'aspect-[4/3] md:aspect-[3/2]',
-                  };
-                  
-                  return (
-                    <div
-                      key={index}
-                      className={`group relative ${sizeClasses[item.size as keyof typeof sizeClasses]} overflow-hidden rounded-lg bg-muted cursor-pointer mb-2 md:mb-3 break-inside-avoid`}
-                    >
-                      {/* Instagram 스타일 이미지 */}
-                      <img
-                        src={item.url}
-                        alt={`스마트팜 교육 현장 ${index + 1}`}
-                        className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
-                        loading="lazy"
-                        onError={(e) => {
-                          // 이미지 로드 실패 시 대체 이미지
-                          const target = e.target as HTMLImageElement;
-                          target.src = `https://images.unsplash.com/photo-1464226184884-fa280b87c399?w=800&h=800&fit=crop&sig=${index}`;
-                        }}
-                      />
-                      {/* Instagram 스타일 오버레이 */}
-                      <div className="absolute inset-0 bg-black/0 group-hover:bg-black/40 transition-all duration-300 flex items-center justify-center">
-                        <div className="opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-center gap-4 text-white">
-                          <div className="flex items-center gap-2">
-                            <Heart className="w-5 h-5 fill-white" />
-                            <span className="text-sm font-medium">1.2K</span>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <ImageIcon className="w-5 h-5" />
-                            <span className="text-sm font-medium">보기</span>
+              
+              {isLoadingImages && (
+                <div className="flex items-center justify-center py-12">
+                  <div className="text-center">
+                    <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-primary mb-4"></div>
+                    <p className="text-muted-foreground">이미지를 불러오는 중...</p>
+                  </div>
+                </div>
+              )}
+
+              {imageError && !isLoadingImages && (
+                <Card className="border-2 border-destructive/20 bg-destructive/5 mb-4">
+                  <CardContent className="p-4">
+                    <p className="text-sm text-destructive text-center">
+                      {imageError}
+                      <br />
+                      <span className="text-xs text-muted-foreground">
+                        환경 변수가 올바르게 설정되었는지 확인해주세요.
+                      </span>
+                    </p>
+                  </CardContent>
+                </Card>
+              )}
+
+              {!isLoadingImages && galleryImages.length === 0 && !imageError && (
+                <Card className="border-2 border-primary/20 bg-primary/5 mb-4">
+                  <CardContent className="p-4">
+                    <p className="text-sm text-muted-foreground text-center">
+                      표시할 이미지가 없습니다.
+                    </p>
+                  </CardContent>
+                </Card>
+              )}
+
+              {!isLoadingImages && galleryImages.length > 0 && (
+                <>
+                  <div className="columns-2 md:columns-3 lg:columns-4 gap-2 md:gap-3">
+                    {galleryImages.map((image, index) => {
+                    // 이미지 크기를 랜덤하게 할당하여 Masonry 레이아웃 효과
+                    const sizes: Array<'square' | 'tall' | 'wide'> = ['square', 'tall', 'wide'];
+                    const size = sizes[index % sizes.length];
+                    
+                    const sizeClasses = {
+                      square: 'aspect-square',
+                      tall: 'aspect-[3/4] md:aspect-[2/3]',
+                      wide: 'aspect-[4/3] md:aspect-[3/2]',
+                    };
+                    
+                    // 이미지 URL 우선순위: downloadUrl > thumbnailLink > webViewLink
+                    const imageUrl = image.downloadUrl || image.thumbnailLink || image.webViewLink;
+                    
+                    return (
+                      <div
+                        key={image.id}
+                        className={`group relative ${sizeClasses[size]} overflow-hidden rounded-lg bg-muted cursor-pointer mb-2 md:mb-3 break-inside-avoid`}
+                        onClick={() => setSelectedImage(image)}
+                      >
+                        {/* Instagram 스타일 이미지 */}
+                        <img
+                          src={imageUrl}
+                          alt={image.name || `스마트팜 교육 현장 ${index + 1}`}
+                          className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
+                          loading="lazy"
+                          onError={(e) => {
+                            // 이미지 로드 실패 시 대체 이미지 시도
+                            const target = e.target as HTMLImageElement;
+                            if (image.thumbnailLink && target.src !== image.thumbnailLink) {
+                              target.src = image.thumbnailLink;
+                            } else if (image.webViewLink && target.src !== image.webViewLink) {
+                              target.src = image.webViewLink;
+                            } else {
+                              // 모든 URL 실패 시 플레이스홀더
+                              target.src = `data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='400' height='400'%3E%3Crect fill='%23ddd' width='400' height='400'/%3E%3Ctext fill='%23999' font-family='sans-serif' font-size='18' x='50%25' y='50%25' text-anchor='middle' dy='.3em'%3E이미지를 불러올 수 없습니다%3C/text%3E%3C/svg%3E`;
+                            }
+                          }}
+                        />
+                        {/* Instagram 스타일 오버레이 */}
+                        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/40 transition-all duration-300 flex items-center justify-center">
+                          <div className="opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-center gap-4 text-white">
+                            <div className="flex items-center gap-2">
+                              <ImageIcon className="w-5 h-5" />
+                              <span className="text-sm font-medium">클릭하여 원본 보기</span>
+                            </div>
                           </div>
                         </div>
+                        {/* Instagram 스타일 그라데이션 오버레이 */}
+                        <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
                       </div>
-                      {/* Instagram 스타일 그라데이션 오버레이 */}
-                      <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+                    );
+                  })}
+                  </div>
+
+                  {/* 페이지네이션 컨트롤 */}
+                  {pagination && (pagination.totalPages !== null && pagination.totalPages > 1 || pagination.hasNextPage) && (
+                    <div className="mt-8 flex flex-col items-center gap-4">
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                          disabled={currentPage === 1 || isLoadingImages}
+                          className="px-4 py-2 text-sm font-medium text-foreground bg-background border border-border rounded-lg hover:bg-muted disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                        >
+                          <ChevronLeft className="w-4 h-4 inline-block mr-1" />
+                          이전
+                        </button>
+                        
+                        <div className="flex items-center gap-1">
+                          {pagination.totalPages !== null ? (
+                            // 전체 페이지 수를 알고 있는 경우
+                            Array.from({ length: Math.min(5, pagination.totalPages) }, (_, i) => {
+                              let pageNum: number;
+                              if (pagination.totalPages! <= 5) {
+                                pageNum = i + 1;
+                              } else if (currentPage <= 3) {
+                                pageNum = i + 1;
+                              } else if (currentPage >= pagination.totalPages! - 2) {
+                                pageNum = pagination.totalPages! - 4 + i;
+                              } else {
+                                pageNum = currentPage - 2 + i;
+                              }
+                              
+                              return (
+                                <button
+                                  key={pageNum}
+                                  onClick={() => setCurrentPage(pageNum)}
+                                  disabled={isLoadingImages}
+                                  className={`px-3 py-2 text-sm font-medium rounded-lg transition-colors ${
+                                    currentPage === pageNum
+                                      ? 'bg-primary text-primary-foreground'
+                                      : 'text-foreground bg-background border border-border hover:bg-muted'
+                                  } disabled:opacity-50 disabled:cursor-not-allowed`}
+                                >
+                                  {pageNum}
+                                </button>
+                              );
+                            })
+                          ) : (
+                            // 전체 페이지 수를 모르는 경우 (현재 페이지만 표시)
+                            <span className="px-4 py-2 text-sm text-muted-foreground">
+                              페이지 {currentPage}
+                            </span>
+                          )}
+                        </div>
+                        
+                        <button
+                          onClick={() => setCurrentPage(prev => prev + 1)}
+                          disabled={!pagination.hasNextPage || isLoadingImages}
+                          className="px-4 py-2 text-sm font-medium text-foreground bg-background border border-border rounded-lg hover:bg-muted disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                        >
+                          다음
+                          <ChevronRight className="w-4 h-4 inline-block ml-1" />
+                        </button>
+                      </div>
+                      
+                      {pagination.totalCount !== null && (
+                        <p className="text-sm text-muted-foreground">
+                          전체 {pagination.totalCount.toLocaleString()}장 중 {((currentPage - 1) * pagination.limit + 1).toLocaleString()}-
+                          {Math.min(currentPage * pagination.limit, pagination.totalCount).toLocaleString()}장 표시
+                        </p>
+                      )}
                     </div>
-                  );
-                })}
-              </div>
+                  )}
+                </>
+              )}
             </div>
 
             {/* 갤러리 설명 */}
@@ -2041,6 +2268,154 @@ export default function ResultsPage() {
                 </p>
               </CardContent>
             </Card>
+
+            {/* 이미지 모달 */}
+            <Dialog 
+              open={!!selectedImage} 
+              onOpenChange={(open) => {
+                if (!open) {
+                  setSelectedImage(null);
+                  setImageDimensions(null);
+                }
+              }}
+            >
+              <DialogContent 
+                className="max-w-[95vw] max-h-[95vh] w-auto h-auto p-0 gap-0 border-0 bg-transparent shadow-2xl"
+                showCloseButton={false}
+                style={{
+                  maxWidth: '95vw',
+                  maxHeight: '95vh',
+                }}
+              >
+                {selectedImage && (
+                  <div className="relative bg-black rounded-lg overflow-visible flex items-center justify-center">
+                    {/* 닫기 버튼 - 우측 상단 */}
+                    <button
+                      onClick={() => {
+                        setSelectedImage(null);
+                        setImageDimensions(null);
+                      }}
+                      className="absolute -top-12 right-0 z-30 flex items-center justify-center w-10 h-10 rounded-full bg-black/80 hover:bg-black backdrop-blur-sm text-white transition-all duration-200 hover:scale-110 focus:outline-none focus:ring-2 focus:ring-white/50"
+                      aria-label="닫기"
+                    >
+                      <XIcon className="w-5 h-5" />
+                    </button>
+
+                    {/* 헤더 - 이미지 위에 오버레이로 표시 */}
+                    <div className="absolute top-0 left-0 right-0 z-10 bg-gradient-to-b from-black/80 via-black/60 to-transparent p-4">
+                      <div className="flex items-center justify-between">
+                        <div className="flex-1 min-w-0 pr-4">
+                          <DialogTitle className="text-white text-sm sm:text-base font-semibold truncate drop-shadow-lg">
+                            {selectedImage.name || '스마트팜 교육 현장 사진'}
+                          </DialogTitle>
+                        </div>
+                        <a
+                          href={selectedImage.webViewLink}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="shrink-0 inline-flex items-center gap-2 px-3 py-1.5 text-xs font-medium text-white bg-white/20 hover:bg-white/30 backdrop-blur-sm rounded-md transition-all"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <LinkIcon className="w-3.5 h-3.5" />
+                          <span className="hidden sm:inline">Google Drive</span>
+                        </a>
+                      </div>
+                    </div>
+
+                    {/* 이미지 컨테이너 - 원본 비율 유지하며 전체 화면에 맞게 표시 */}
+                    <div className="relative w-full h-full flex items-center justify-center p-0">
+                      <img
+                        key={selectedImage.id}
+                        src={selectedImage.apiUrl || selectedImage.thumbnailLink || selectedImage.downloadUrl || selectedImage.downloadUrl2 || selectedImage.webViewLink}
+                        alt={selectedImage.name || '스마트팜 교육 현장'}
+                        className="w-auto h-auto"
+                        style={{
+                          display: 'block',
+                          maxWidth: 'min(95vw, 95vh * (imageDimensions?.width || 1) / (imageDimensions?.height || 1))',
+                          maxHeight: 'min(95vh, 95vw * (imageDimensions?.height || 1) / (imageDimensions?.width || 1))',
+                          width: 'auto',
+                          height: 'auto',
+                          objectFit: 'contain',
+                        }}
+                        onLoad={(e) => {
+                          const img = e.target as HTMLImageElement;
+                          const naturalWidth = img.naturalWidth;
+                          const naturalHeight = img.naturalHeight;
+                          setImageDimensions({
+                            width: naturalWidth,
+                            height: naturalHeight,
+                          });
+                          
+                          // 이미지 크기에 맞게 스타일 업데이트
+                          const aspectRatio = naturalWidth / naturalHeight;
+                          const maxWidth = Math.min(window.innerWidth * 0.95, window.innerHeight * 0.95 * aspectRatio);
+                          const maxHeight = Math.min(window.innerHeight * 0.95, window.innerWidth * 0.95 / aspectRatio);
+                          
+                          img.style.maxWidth = `${maxWidth}px`;
+                          img.style.maxHeight = `${maxHeight}px`;
+                          
+                          console.log('이미지 로드 완료:', {
+                            naturalWidth,
+                            naturalHeight,
+                            aspectRatio: aspectRatio.toFixed(2),
+                            calculatedMaxWidth: maxWidth,
+                            calculatedMaxHeight: maxHeight,
+                          });
+                        }}
+                        onError={(e) => {
+                          const target = e.target as HTMLImageElement;
+                          const triedUrls = [target.src];
+                          
+                          console.error('이미지 로드 실패:', {
+                            currentSrc: target.src,
+                            triedUrls,
+                            availableUrls: {
+                              apiUrl: selectedImage.apiUrl,
+                              thumbnailLink: selectedImage.thumbnailLink,
+                              downloadUrl: selectedImage.downloadUrl,
+                              downloadUrl2: selectedImage.downloadUrl2,
+                              webViewLink: selectedImage.webViewLink,
+                            },
+                          });
+                          
+                          // 대체 URL 순차적으로 시도 (API URL이 실패한 경우)
+                          if (selectedImage.apiUrl && target.src === selectedImage.apiUrl) {
+                            // API URL이 실패했으므로 다른 URL 시도
+                            if (selectedImage.thumbnailLink) {
+                              target.src = selectedImage.thumbnailLink;
+                            } else if (selectedImage.downloadUrl) {
+                              target.src = selectedImage.downloadUrl;
+                            } else if (selectedImage.downloadUrl2) {
+                              target.src = selectedImage.downloadUrl2;
+                            }
+                          } else if (selectedImage.thumbnailLink && !triedUrls.includes(selectedImage.thumbnailLink)) {
+                            target.src = selectedImage.thumbnailLink;
+                            triedUrls.push(selectedImage.thumbnailLink);
+                          } else if (selectedImage.downloadUrl && !triedUrls.includes(selectedImage.downloadUrl)) {
+                            target.src = selectedImage.downloadUrl;
+                            triedUrls.push(selectedImage.downloadUrl);
+                          } else if (selectedImage.downloadUrl2 && !triedUrls.includes(selectedImage.downloadUrl2)) {
+                            target.src = selectedImage.downloadUrl2;
+                            triedUrls.push(selectedImage.downloadUrl2);
+                          } else {
+                            // 모든 URL 실패 시 플레이스홀더
+                            target.src = `data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='800' height='600'%3E%3Crect fill='%23ddd' width='800' height='600'/%3E%3Ctext fill='%23999' font-family='sans-serif' font-size='24' x='50%25' y='50%25' text-anchor='middle' dy='.3em'%3E이미지를 불러올 수 없습니다%3C/text%3E%3C/svg%3E`;
+                          }
+                        }}
+                      />
+                    </div>
+                    
+                    {/* 이미지 크기 정보 (개발용) */}
+                    {imageDimensions && (
+                      <div className="absolute bottom-4 left-4 z-10 px-3 py-1.5 bg-black/60 backdrop-blur-sm rounded-md text-white text-xs">
+                        원본: {imageDimensions.width.toLocaleString()} × {imageDimensions.height.toLocaleString()}px 
+                        (비율: {(imageDimensions.width / imageDimensions.height).toFixed(2)})
+                      </div>
+                    )}
+                  </div>
+                )}
+              </DialogContent>
+            </Dialog>
             <a
               href="#top"
               className="inline-flex items-center gap-2 mt-6 px-4 py-2 text-sm font-medium text-primary bg-primary/10 rounded-lg hover:bg-primary/20 transition-colors"
@@ -2053,7 +2428,7 @@ export default function ResultsPage() {
 
         {/* 푸터 */}
         <footer className="border-t border-border bg-muted/30 py-6">
-          <div className="container mx-auto max-w-[980px] px-4">
+          <div className="container mx-auto max-w-6xl px-4">
             <p className="text-muted-foreground text-xs md:text-sm text-center">
               © 금산교육발전특구 스마트팜 교육 프로그램 운영 결과 보고
             </p>
