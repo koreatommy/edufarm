@@ -33,15 +33,17 @@ interface ApiResponse {
  * Google Drive Service Account 인증 및 API 클라이언트 생성
  */
 function getGoogleDriveClient() {
-  const serviceAccountEmail = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
-  const privateKey = process.env.GOOGLE_PRIVATE_KEY;
+  const serviceAccountEmail = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL?.trim();
+  const privateKey = process.env.GOOGLE_PRIVATE_KEY?.trim();
 
   if (!serviceAccountEmail || !privateKey) {
     throw new Error('환경 변수가 설정되지 않았습니다: GOOGLE_SERVICE_ACCOUNT_EMAIL 또는 GOOGLE_PRIVATE_KEY');
   }
 
   // Private key의 이스케이프된 \n을 실제 줄바꿈으로 변환
-  const formattedPrivateKey = privateKey.replace(/\\n/g, '\n');
+  // 큰따옴표 제거 (환경 변수에 큰따옴표가 포함된 경우)
+  let cleanedPrivateKey = privateKey.replace(/^["']|["']$/g, '');
+  const formattedPrivateKey = cleanedPrivateKey.replace(/\\n/g, '\n');
 
   // JWT 인증 설정
   const auth = new google.auth.JWT({
@@ -296,8 +298,8 @@ Google Drive에서 폴더를 공유하고 Service Account(${process.env.GOOGLE_S
       { 
         error: errorMessage,
         details: process.env.NODE_ENV === 'development' ? errorDetails : undefined,
-        folderId: process.env.DRIVE_FOLDER_ID,
-        serviceAccount: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
+        folderId: process.env.DRIVE_FOLDER_ID?.trim(),
+        serviceAccount: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL?.trim(),
       },
       { status: 500 }
     );
