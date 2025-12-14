@@ -152,18 +152,21 @@ Google Drive에서 폴더를 공유하고 Service Account(${process.env.GOOGLE_S
     let totalItems = 0;
     let nextPageToken: string | undefined = undefined;
     
-    do {
+    // eslint-disable-next-line no-constant-condition
+    while (true) {
       const countResponse = await drive.files.list({
         q: `'${folderId}' in parents and mimeType contains 'image/' and trashed = false`,
         fields: 'nextPageToken, files(id)',
         pageSize: 1000, // Google Drive API 최대값
         pageToken: nextPageToken,
-      });
+      }) as { data: { files?: Array<{ id?: string | null }>; nextPageToken?: string | null } };
       
       const files = countResponse.data.files || [];
       totalItems += files.length;
       nextPageToken = countResponse.data.nextPageToken || undefined;
-    } while (nextPageToken);
+      
+      if (!nextPageToken) break;
+    }
 
     const totalPages = Math.ceil(totalItems / fixedLimit);
 
@@ -179,7 +182,7 @@ Google Drive에서 폴더를 공유하고 Service Account(${process.env.GOOGLE_S
           pageSize: fixedLimit,
           orderBy: 'modifiedTime desc',
           pageToken: currentPageToken,
-        });
+        }) as { data: { nextPageToken?: string | null } };
         currentPageToken = tempResponse.data.nextPageToken || undefined;
         if (!currentPageToken) break; // 더 이상 페이지가 없으면 중단
       }
@@ -192,7 +195,20 @@ Google Drive에서 폴더를 공유하고 Service Account(${process.env.GOOGLE_S
       orderBy: 'modifiedTime desc', // 최신 파일부터
       pageSize: fixedLimit,
       pageToken: currentPageToken,
-    });
+    }) as { 
+      data: { 
+        files?: Array<{
+          id?: string | null;
+          name?: string | null;
+          thumbnailLink?: string | null;
+          webViewLink?: string | null;
+          createdTime?: string | null;
+          modifiedTime?: string | null;
+          mimeType?: string | null;
+        }>;
+        nextPageToken?: string | null;
+      } 
+    };
 
     const files = response.data.files || [];
     const hasNextPage = !!response.data.nextPageToken;
