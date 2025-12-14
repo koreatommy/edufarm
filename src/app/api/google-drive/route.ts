@@ -97,25 +97,36 @@ export async function GET(request: NextRequest) {
     // Google Drive 클라이언트 생성
     const drive = getGoogleDriveClient();
 
-    // 인증 토큰 확인 (디버깅용)
+    // 인증 토큰 확인 및 설정
     try {
       const auth = (drive as any).auth;
       if (auth) {
-        await auth.authorize();
-        console.log('✅ Service Account 인증 성공');
+        // 인증 토큰 가져오기
+        const token = await auth.getAccessToken();
+        console.log('✅ Service Account 인증 성공, 토큰 획득');
+        console.log('Service Account Email:', process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL?.trim());
       }
     } catch (authError: any) {
-      console.error('❌ Service Account 인증 실패:', authError);
+      console.error('❌ Service Account 인증 실패:', {
+        message: authError.message,
+        code: authError.code,
+        errors: authError.errors,
+      });
       throw new Error(`Service Account 인증 실패: ${authError.message}. 환경 변수 GOOGLE_PRIVATE_KEY를 확인해주세요.`);
     }
 
     // 먼저 폴더 접근 권한 확인
     try {
+      console.log('폴더 접근 시도:', { folderId, serviceAccount: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL?.trim() });
       const folderInfo = await drive.files.get({
         fileId: folderId,
         fields: 'id, name, mimeType, shared, permissions',
       });
-      console.log('✅ 폴더 접근 성공:', folderInfo.data.name);
+      console.log('✅ 폴더 접근 성공:', {
+        id: folderInfo.data.id,
+        name: folderInfo.data.name,
+        shared: folderInfo.data.shared,
+      });
     } catch (folderError: any) {
       console.error('❌ 폴더 접근 실패:', {
         code: folderError?.code,
@@ -139,26 +150,32 @@ export async function GET(request: NextRequest) {
       if (folderError?.code === 404) {
         const shareLink = `https://drive.google.com/drive/folders/${folderId}`;
         const serviceAccountEmail = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL?.trim() || '설정되지 않음';
-        throw new Error(`폴더를 찾을 수 없습니다 (404). 
+        const errorDetails = folderError?.errors?.[0] || {};
+        
+        // 더 자세한 에러 정보 포함
+        let detailedMessage = `폴더를 찾을 수 없습니다 (404). 
 
-⚠️ 중요: Google Drive에서 폴더를 Service Account와 공유해야 합니다.
+⚠️ 중요: Service Account가 폴더에 공유되어 있어도 인증 문제로 404가 발생할 수 있습니다.
 
-🔧 해결 방법 (단계별):
+🔧 해결 방법:
 1. 다음 링크로 폴더 열기: ${shareLink}
-2. 폴더 선택 후 상단 "공유" 버튼 클릭 (또는 우클릭 → "공유")
-3. "사용자 및 그룹 추가" 필드에 정확히 입력:
-   ${serviceAccountEmail}
-4. 권한 드롭다운에서 "뷰어" 선택
-5. "완료" 또는 "공유" 클릭
-6. 공유 목록에 ${serviceAccountEmail}이 "뷰어"로 표시되는지 확인
-7. 몇 분 후 다시 시도 (권한 적용 시간 필요)
+2. 공유 목록에서 ${serviceAccountEmail}이 있는지 확인
+3. 없다면 추가: "공유" → 이메일 입력 → "뷰어" 권한 → "완료"
+4. 있다면 권한을 "뷰어" 이상으로 설정
+5. Google Cloud Console에서 Service Account가 활성화되어 있는지 확인
+6. Private Key가 올바른지 확인
 
 📋 확인 사항:
 - 폴더 ID: ${folderId}
 - Service Account: ${serviceAccountEmail}
-- 폴더가 삭제되지 않았는지 확인
 - 공유 목록에 Service Account가 있는지 확인
-- 이메일 주소를 정확히 입력했는지 확인 (오타 없이)`);
+- Service Account 권한이 "뷰어" 이상인지 확인`;
+
+        if (process.env.NODE_ENV === 'development' && errorDetails.message) {
+          detailedMessage += `\n\n🔍 개발 환경 디버그 정보:\n${errorDetails.message}`;
+        }
+        
+        throw new Error(detailedMessage);
       } else if (folderError?.code === 403) {
         const serviceAccountEmail = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL?.trim() || '설정되지 않음';
         throw new Error(`폴더 접근 권한이 없습니다 (403). 
