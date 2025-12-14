@@ -230,19 +230,20 @@ export async function GET(request: NextRequest) {
       throw error;
     }
 
-    if (!response.data.files) {
+    if (!response.data.files || !Array.isArray(response.data.files)) {
       return NextResponse.json({ images: [] });
     }
 
     // 이미지 파일만 필터링하고 필요한 정보 추출
-    const images = response.data.files
-      .filter(file => {
+    const files = response.data.files || [];
+    const images = files
+      .filter((file: any) => {
         if (!file.mimeType || !file.id) return false;
         return imageExtensions.some(ext => 
           file.mimeType!.toLowerCase().includes(ext)
         );
       })
-      .map(file => {
+      .map((file: any) => {
         // Google Drive 이미지 직접 다운로드 URL 생성 (공개 폴더용)
         // 여러 URL 옵션 제공하여 호환성 향상
         const fileId = file.id!;
