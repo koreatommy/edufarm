@@ -30,15 +30,21 @@ export async function GET(request: NextRequest) {
 
     // 환경 변수 검증
     if (!apiKey) {
+      const errorMessage = process.env.NODE_ENV === 'production'
+        ? 'GOOGLE_API_KEY가 설정되지 않았습니다. Vercel 대시보드의 환경 변수 설정에서 GOOGLE_API_KEY 또는 GOOGLE_DRIVE_API_KEY를 추가해주세요.'
+        : 'GOOGLE_API_KEY가 설정되지 않았습니다. .env.local 파일에 GOOGLE_API_KEY 또는 GOOGLE_DRIVE_API_KEY를 추가해주세요.';
       return NextResponse.json(
-        { error: 'GOOGLE_API_KEY가 설정되지 않았습니다.' },
+        { error: errorMessage },
         { status: 500 }
       );
     }
 
     if (!folderId) {
+      const errorMessage = process.env.NODE_ENV === 'production'
+        ? 'DRIVE_FOLDER_ID가 설정되지 않았습니다. Vercel 대시보드의 환경 변수 설정에서 DRIVE_FOLDER_ID 또는 GOOGLE_DRIVE_FOLDER_ID를 추가해주세요.'
+        : 'DRIVE_FOLDER_ID가 설정되지 않았습니다. .env.local 파일에 DRIVE_FOLDER_ID 또는 GOOGLE_DRIVE_FOLDER_ID를 추가해주세요.';
       return NextResponse.json(
-        { error: 'DRIVE_FOLDER_ID가 설정되지 않았습니다.' },
+        { error: errorMessage },
         { status: 500 }
       );
     }
