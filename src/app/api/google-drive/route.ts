@@ -202,7 +202,7 @@ Google Drive에서 폴더를 공유하고 Service Account(${serviceAccountEmail}
     const now = Date.now();
     const useCache = totalItemsCache && (now - totalItemsCache.timestamp) < CACHE_DURATION;
     
-    if (useCache && !skipCount) {
+    if (useCache && !skipCount && totalItemsCache) {
       // 캐시된 값 사용
       totalItems = totalItemsCache.count;
       totalPages = Math.ceil(totalItems / fixedLimit);
