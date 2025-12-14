@@ -15,14 +15,16 @@ export async function GET(request: NextRequest) {
     const apiKey = process.env.GOOGLE_API_KEY || process.env.GOOGLE_DRIVE_API_KEY;
     const folderIdRaw = process.env.DRIVE_FOLDER_ID || process.env.GOOGLE_DRIVE_FOLDER_ID;
     
-    // 디버깅 로그 (개발 환경에서만)
-    if (process.env.NODE_ENV === 'development') {
-      console.log('환경 변수 확인:', {
-        hasApiKey: !!apiKey,
-        apiKeyPrefix: apiKey ? `${apiKey.substring(0, 10)}...` : '없음',
-        folderIdRaw: folderIdRaw,
-      });
-    }
+    // 디버깅 로그 (프로덕션에서도 환경 변수 확인용)
+    console.log('환경 변수 확인:', {
+      hasApiKey: !!apiKey,
+      apiKeyPrefix: apiKey ? `${apiKey.substring(0, 10)}...` : '없음',
+      apiKeyLength: apiKey?.length || 0,
+      hasFolderId: !!folderIdRaw,
+      folderIdRaw: folderIdRaw,
+      folderIdRawLength: folderIdRaw?.length || 0,
+      nodeEnv: process.env.NODE_ENV,
+    });
     
     // 폴더 ID에서 URL이 포함된 경우 ID만 추출
     folderId = folderIdRaw || null;
@@ -75,8 +77,55 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    // 먼저 폴더가 존재하고 접근 가능한지 확인
+    try {
+      const folderMetadata = await drive.files.get({
+        fileId: folderId,
+        fields: 'id, name, mimeType, permissions',
+      });
+      console.log('폴더 메타데이터 확인 성공:', {
+        id: folderMetadata.data.id,
+        name: folderMetadata.data.name,
+        mimeType: folderMetadata.data.mimeType,
+      });
+    } catch (folderError: any) {
+      const folderErrorMessage = folderError?.response?.data?.error?.message || folderError?.message || '알 수 없는 오류';
+      console.error('폴더 접근 실패:', {
+        folderId: folderId,
+        error: folderErrorMessage,
+        status: folderError?.response?.status,
+        code: folderError?.code,
+      });
+      
+      // 폴더 접근 실패 시 더 명확한 에러 메시지
+      if (folderError?.response?.status === 404) {
+        return NextResponse.json(
+          { 
+            error: `폴더를 찾을 수 없습니다. 폴더 ID(${folderId})가 올바른지, 그리고 폴더가 "링크가 있는 모든 사용자"로 공개되어 있는지 확인해주세요.`,
+            details: folderErrorMessage
+          },
+          { status: 404 }
+        );
+      } else if (folderError?.response?.status === 403) {
+        return NextResponse.json(
+          { 
+            error: `폴더 접근이 거부되었습니다. 폴더(${folderId})가 "링크가 있는 모든 사용자"로 공개되어 있는지 확인해주세요.`,
+            details: folderErrorMessage
+          },
+          { status: 403 }
+        );
+      }
+      // 다른 에러는 계속 진행하여 파일 목록 조회 시도
+    }
+
     // 폴더 내 이미지 파일 목록 조회
-    const query = `'${folderId}' in parents and mimeType contains 'image/' and trashed=false`;
+    // 여러 쿼리 옵션 시도
+    const queries = [
+      `'${folderId}' in parents and mimeType contains 'image/' and trashed=false`,
+      `'${folderId}' in parents and (mimeType='image/jpeg' or mimeType='image/png' or mimeType='image/gif' or mimeType='image/webp') and trashed=false`,
+    ];
+    
+    const query = queries[0];
     
     // 디버깅 로그 (프로덕션에서도 폴더 ID 확인용)
     console.log('Google Drive API 요청:', {
@@ -86,6 +135,7 @@ export async function GET(request: NextRequest) {
       page: page,
       limit: limit,
       pageSize: pageSize,
+      apiKeyPrefix: apiKey ? `${apiKey.substring(0, 10)}...` : '없음',
     });
     
     // 전체 이미지 개수 조회 (선택적, 성능 고려하여 간단하게)
@@ -102,12 +152,14 @@ export async function GET(request: NextRequest) {
       // 이전 페이지들을 순회하여 해당 페이지의 토큰 찾기
       // 성능을 위해 최대 10페이지까지만 지원 (300개)
       for (let i = 1; i < page && i <= 10; i++) {
-        const tempResponse = await drive.files.list({
+        const         tempResponse = await drive.files.list({
           q: query,
           fields: 'nextPageToken',
           orderBy: 'modifiedTime desc',
           pageSize: pageSize,
           pageToken: pageToken,
+          supportsAllDrives: true,
+          includeItemsFromAllDrives: false,
         });
         pageToken = tempResponse.data.nextPageToken || undefined;
         if (!pageToken) break;
@@ -116,12 +168,16 @@ export async function GET(request: NextRequest) {
     
     let response;
     try {
+      // API 키 제한 확인을 위한 추가 파라미터
       response = await drive.files.list({
         q: query,
         fields: 'files(id, name, thumbnailLink, webViewLink, mimeType, size), nextPageToken',
         orderBy: 'modifiedTime desc',
         pageSize: pageSize,
         pageToken: pageToken,
+        // supportsAllDrives와 includeItemsFromAllDrives를 true로 설정하여 공유 드라이브 지원
+        supportsAllDrives: true,
+        includeItemsFromAllDrives: false,
       });
     } catch (apiError: any) {
       // Google API 에러를 더 자세히 로깅
@@ -141,6 +197,8 @@ export async function GET(request: NextRequest) {
       console.error('Google Drive API 상세 오류:', JSON.stringify(errorDetails, null, 2));
       console.error('폴더 ID:', folderId);
       console.error('쿼리:', query);
+      console.error('API 키 존재:', !!apiKey);
+      console.error('환경:', process.env.NODE_ENV);
       
       // 에러 메시지 추출
       let errorMessage = '알 수 없는 오류';
@@ -148,6 +206,15 @@ export async function GET(request: NextRequest) {
         errorMessage = apiError.response.data.error.message;
       } else if (apiError?.message) {
         errorMessage = apiError.message;
+      }
+      
+      // "File not found" 에러의 경우 더 자세한 정보 제공
+      if (errorMessage.includes('File not found') || apiError?.response?.status === 404) {
+        console.error('폴더 접근 실패 - 가능한 원인:');
+        console.error('1. 폴더 ID가 잘못되었거나 존재하지 않음');
+        console.error('2. 폴더가 공개되지 않음 (링크가 있는 모든 사용자로 공개 필요)');
+        console.error('3. API 키에 Google Drive API 권한이 없음');
+        console.error('4. API 키의 HTTP 리퍼러 제한이 Vercel 도메인을 차단함');
       }
       
       // 에러를 다시 throw하여 상위에서 처리
