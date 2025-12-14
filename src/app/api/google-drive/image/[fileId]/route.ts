@@ -5,15 +5,16 @@ import { google } from 'googleapis';
  * Google Drive Service Account 인증 및 API 클라이언트 생성
  */
 function getGoogleDriveClient() {
-  const serviceAccountEmail = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
-  const privateKey = process.env.GOOGLE_PRIVATE_KEY;
+  const serviceAccountEmail = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL?.trim();
+  const privateKey = process.env.GOOGLE_PRIVATE_KEY?.trim();
 
   if (!serviceAccountEmail || !privateKey) {
     throw new Error('환경 변수가 설정되지 않았습니다: GOOGLE_SERVICE_ACCOUNT_EMAIL 또는 GOOGLE_PRIVATE_KEY');
   }
 
-  // Private key의 이스케이프된 \n을 실제 줄바꿈으로 변환
-  const formattedPrivateKey = privateKey.replace(/\\n/g, '\n');
+  // Private key의 큰따옴표 제거 및 이스케이프된 \n을 실제 줄바꿈으로 변환
+  let cleanedPrivateKey = privateKey.replace(/^["']|["']$/g, '');
+  const formattedPrivateKey = cleanedPrivateKey.replace(/\\n/g, '\n');
 
   // JWT 인증 설정
   const auth = new google.auth.JWT({
