@@ -77,11 +77,14 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // 먼저 폴더가 존재하고 접근 가능한지 확인
+    // 폴더 메타데이터 확인 (선택적, 실패해도 계속 진행)
+    // 공개 폴더의 경우 API 키만으로는 메타데이터 접근이 제한될 수 있으므로
+    // 실패해도 파일 목록 조회는 시도
     try {
       const folderMetadata = await drive.files.get({
         fileId: folderId,
-        fields: 'id, name, mimeType, permissions',
+        fields: 'id, name, mimeType',
+        supportsAllDrives: false,
       });
       console.log('폴더 메타데이터 확인 성공:', {
         id: folderMetadata.data.id,
@@ -90,32 +93,14 @@ export async function GET(request: NextRequest) {
       });
     } catch (folderError: any) {
       const folderErrorMessage = folderError?.response?.data?.error?.message || folderError?.message || '알 수 없는 오류';
-      console.error('폴더 접근 실패:', {
+      console.warn('폴더 메타데이터 확인 실패 (파일 목록 조회는 계속 진행):', {
         folderId: folderId,
         error: folderErrorMessage,
         status: folderError?.response?.status,
         code: folderError?.code,
+        note: '공개 폴더의 경우 메타데이터 접근이 제한될 수 있지만, 파일 목록 조회는 가능할 수 있습니다.',
       });
-      
-      // 폴더 접근 실패 시 더 명확한 에러 메시지
-      if (folderError?.response?.status === 404) {
-        return NextResponse.json(
-          { 
-            error: `폴더를 찾을 수 없습니다. 폴더 ID(${folderId})가 올바른지, 그리고 폴더가 "링크가 있는 모든 사용자"로 공개되어 있는지 확인해주세요.`,
-            details: folderErrorMessage
-          },
-          { status: 404 }
-        );
-      } else if (folderError?.response?.status === 403) {
-        return NextResponse.json(
-          { 
-            error: `폴더 접근이 거부되었습니다. 폴더(${folderId})가 "링크가 있는 모든 사용자"로 공개되어 있는지 확인해주세요.`,
-            details: folderErrorMessage
-          },
-          { status: 403 }
-        );
-      }
-      // 다른 에러는 계속 진행하여 파일 목록 조회 시도
+      // 폴더 메타데이터 접근 실패는 무시하고 파일 목록 조회 계속 진행
     }
 
     // 폴더 내 이미지 파일 목록 조회
@@ -158,7 +143,7 @@ export async function GET(request: NextRequest) {
           orderBy: 'modifiedTime desc',
           pageSize: pageSize,
           pageToken: pageToken,
-          supportsAllDrives: true,
+          supportsAllDrives: false,
           includeItemsFromAllDrives: false,
         });
         pageToken = tempResponse.data.nextPageToken || undefined;
@@ -168,15 +153,16 @@ export async function GET(request: NextRequest) {
     
     let response;
     try {
-      // API 키 제한 확인을 위한 추가 파라미터
+      // 공개 폴더 접근을 위한 API 호출
+      // 공개 폴더의 경우 API 키만으로 접근 가능하지만, 일부 제한이 있을 수 있음
       response = await drive.files.list({
         q: query,
         fields: 'files(id, name, thumbnailLink, webViewLink, mimeType, size), nextPageToken',
         orderBy: 'modifiedTime desc',
         pageSize: pageSize,
         pageToken: pageToken,
-        // supportsAllDrives와 includeItemsFromAllDrives를 true로 설정하여 공유 드라이브 지원
-        supportsAllDrives: true,
+        // 공개 폴더 접근을 위한 설정
+        supportsAllDrives: false, // 개인 드라이브만 사용
         includeItemsFromAllDrives: false,
       });
     } catch (apiError: any) {
@@ -215,6 +201,11 @@ export async function GET(request: NextRequest) {
         console.error('2. 폴더가 공개되지 않음 (링크가 있는 모든 사용자로 공개 필요)');
         console.error('3. API 키에 Google Drive API 권한이 없음');
         console.error('4. API 키의 HTTP 리퍼러 제한이 Vercel 도메인을 차단함');
+        console.error('5. API 키의 IP 주소 제한');
+        console.error('해결 방법:');
+        console.error('- Google Cloud Console에서 API 키의 "애플리케이션 제한사항" 확인');
+        console.error('- "HTTP 리퍼러(웹사이트)" 제한이 있다면 Vercel 도메인 추가');
+        console.error('- 또는 "IP 주소" 제한을 제거하거나 Vercel IP 추가');
       }
       
       // 에러를 다시 throw하여 상위에서 처리
