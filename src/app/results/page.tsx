@@ -384,7 +384,13 @@ export default function ResultsPage() {
           }
           
           // 에러 상세 정보 로깅 (details가 있고 비어있지 않은 경우만)
-          if (data.details && typeof data.details === 'object' && Object.keys(data.details).length > 0) {
+          // 빈 객체 {}는 로깅하지 않음
+          const hasValidDetails = data.details && 
+            typeof data.details === 'object' && 
+            !Array.isArray(data.details) &&
+            Object.keys(data.details).length > 0;
+          
+          if (hasValidDetails) {
             console.error('API 에러 상세:', data.details);
           }
           
