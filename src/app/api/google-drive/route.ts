@@ -153,7 +153,7 @@ Google Drive에서 폴더를 공유하고 Service Account(${process.env.GOOGLE_S
     let nextPageToken: string | undefined = undefined;
     
     do {
-      const countResponse: { data: { files?: Array<{ id?: string }>; nextPageToken?: string } } = await drive.files.list({
+      const countResponse = await drive.files.list({
         q: `'${folderId}' in parents and mimeType contains 'image/' and trashed = false`,
         fields: 'nextPageToken, files(id)',
         pageSize: 1000, // Google Drive API 최대값
@@ -173,7 +173,7 @@ Google Drive에서 폴더를 공유하고 Service Account(${process.env.GOOGLE_S
     // 1페이지가 아니면 해당 페이지까지 pageToken을 순차적으로 이동
     if (page > 1) {
       for (let i = 1; i < page; i++) {
-        const tempResponse: { data: { nextPageToken?: string } } = await drive.files.list({
+        const tempResponse = await drive.files.list({
           q: `'${folderId}' in parents and mimeType contains 'image/' and trashed = false`,
           fields: 'nextPageToken',
           pageSize: fixedLimit,
@@ -186,20 +186,7 @@ Google Drive에서 폴더를 공유하고 Service Account(${process.env.GOOGLE_S
     }
 
     // 현재 페이지 데이터 조회
-    const response: { 
-      data: { 
-        files?: Array<{
-          id?: string;
-          name?: string;
-          thumbnailLink?: string;
-          webViewLink?: string;
-          createdTime?: string;
-          modifiedTime?: string;
-          mimeType?: string;
-        }>;
-        nextPageToken?: string;
-      } 
-    } = await drive.files.list({
+    const response = await drive.files.list({
       q: `'${folderId}' in parents and mimeType contains 'image/' and trashed = false`,
       fields: 'files(id, name, thumbnailLink, webViewLink, createdTime, modifiedTime, mimeType), nextPageToken',
       orderBy: 'modifiedTime desc', // 최신 파일부터
