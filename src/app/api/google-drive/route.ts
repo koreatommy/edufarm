@@ -5,6 +5,9 @@ import { google } from 'googleapis';
  * Google Drive API를 사용하여 폴더 내 이미지 파일 목록을 조회하는 API 엔드포인트
  */
 export async function GET(request: NextRequest) {
+  // 폴더 ID를 catch 블록에서도 사용할 수 있도록 외부에 선언
+  let folderId: string | null = null;
+  
   try {
     const searchParams = request.nextUrl.searchParams;
     
@@ -22,7 +25,7 @@ export async function GET(request: NextRequest) {
     }
     
     // 폴더 ID에서 URL이 포함된 경우 ID만 추출
-    let folderId = folderIdRaw;
+    folderId = folderIdRaw || null;
     if (folderIdRaw?.includes('/folders/')) {
       const match = folderIdRaw.match(/\/folders\/([a-zA-Z0-9_-]+)/);
       folderId = match ? match[1] : folderIdRaw;
@@ -240,19 +243,19 @@ export async function GET(request: NextRequest) {
       let userFriendlyMessage = '이미지를 불러오는 중 오류가 발생했습니다.';
       
       // HTTP 상태 코드 기반 메시지
+      const folderIdForError = folderId || '없음';
       if (errorStatus === 403 || errorCode === 403) {
-        userFriendlyMessage = `Google Drive API 접근이 거부되었습니다. API 키 권한과 폴더 공개 설정을 확인해주세요. (폴더 ID: ${folderId}) 폴더를 "링크가 있는 모든 사용자"로 공개해야 합니다.`;
+        userFriendlyMessage = `Google Drive API 접근이 거부되었습니다. API 키 권한과 폴더 공개 설정을 확인해주세요. (폴더 ID: ${folderIdForError}) 폴더를 "링크가 있는 모든 사용자"로 공개해야 합니다.`;
       } else if (errorStatus === 401 || errorCode === 401) {
         userFriendlyMessage = 'Google Drive API 인증에 실패했습니다. API 키가 유효한지 확인해주세요.';
       } else if (errorStatus === 404 || errorCode === 404) {
-        const folderIdForError = folderId || '없음';
         userFriendlyMessage = `폴더를 찾을 수 없습니다. 폴더 ID를 확인해주세요.: ${errorMessage} (폴더 ID: ${folderIdForError}) 폴더가 공개되어 있는지 확인하세요.`;
       } else if (errorMessage.includes('API key not valid')) {
         userFriendlyMessage = 'API 키가 유효하지 않습니다. Google Cloud Console에서 API 키를 확인해주세요.';
       } else if (errorMessage.includes('insufficient permissions') || errorMessage.includes('permission denied')) {
         userFriendlyMessage = 'API 키에 Google Drive API 접근 권한이 없습니다. Google Cloud Console에서 Drive API를 활성화해주세요.';
       } else if (errorMessage.includes('File not found')) {
-        userFriendlyMessage = `폴더를 찾을 수 없습니다. 폴더 ID(${folderId})가 올바른지, 그리고 폴더가 "링크가 있는 모든 사용자"로 공개되어 있는지 확인해주세요.`;
+        userFriendlyMessage = `폴더를 찾을 수 없습니다. 폴더 ID(${folderIdForError})가 올바른지, 그리고 폴더가 "링크가 있는 모든 사용자"로 공개되어 있는지 확인해주세요.`;
       }
       
       // 개발 환경에서 더 자세한 정보 포함
