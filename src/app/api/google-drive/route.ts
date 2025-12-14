@@ -82,8 +82,8 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // 폴더 ID 확인
-    const folderId = process.env.DRIVE_FOLDER_ID;
+    // 폴더 ID 확인 (공백 및 줄바꿈 제거)
+    const folderId = process.env.DRIVE_FOLDER_ID?.trim();
     if (!folderId) {
       return NextResponse.json(
         { 
