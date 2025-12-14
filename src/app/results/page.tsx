@@ -313,10 +313,10 @@ export default function ResultsPage() {
   const [currentPage, setCurrentPage] = useState(1);
   const [pagination, setPagination] = useState<{
     currentPage: number;
-    limit: number;
-    totalCount: number | null;
-    totalPages: number | null;
+    totalPages: number;
+    totalItems: number;
     hasNextPage: boolean;
+    hasPreviousPage: boolean;
   } | null>(null);
 
   useEffect(() => {
@@ -349,6 +349,7 @@ export default function ResultsPage() {
         setIsLoadingImages(true);
         setImageError(null);
         
+        // limit은 항상 30으로 고정
         const response = await fetch(`/api/google-drive?page=${currentPage}&limit=30`);
         
         // Content-Type 헤더 확인
@@ -438,7 +439,41 @@ export default function ResultsPage() {
       }
     };
 
+    // 30초마다 자동 새로고침 (실시간 업데이트)
+    let intervalId: NodeJS.Timeout;
+
+    // Page Visibility API: 탭이 보이는 상태일 때만 polling 실행
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        // 탭이 백그라운드로 이동하면 interval 중지
+        if (intervalId) {
+          clearInterval(intervalId);
+        }
+      } else {
+        // 탭이 다시 포그라운드로 이동하면 즉시 새로고침하고 interval 재시작
+        fetchImages();
+        intervalId = setInterval(fetchImages, 30000); // 30초
+      }
+    };
+
+    // 초기 로드
     fetchImages();
+
+    // 페이지가 보이는 상태일 때만 자동 새로고침 활성화
+    if (!document.hidden) {
+      intervalId = setInterval(fetchImages, 30000); // 30초
+    }
+
+    // Visibility change 이벤트 리스너 등록
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    // Cleanup: 컴포넌트 언마운트 시 interval 및 이벤트 리스너 제거
+    return () => {
+      if (intervalId) {
+        clearInterval(intervalId);
+      }
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
   }, [currentPage]);
 
   return (
@@ -2142,8 +2177,8 @@ export default function ResultsPage() {
                       wide: 'aspect-[4/3] md:aspect-[3/2]',
                     };
                     
-                    // 이미지 URL 우선순위: downloadUrl > thumbnailLink > webViewLink
-                    const imageUrl = image.downloadUrl || image.thumbnailLink || image.webViewLink;
+                    // 갤러리 목록에서도 고해상도 이미지 사용 (프록시 URL)
+                    const imageUrl = image.downloadUrl || image.apiUrl || image.thumbnailLink || image.webViewLink;
                     
                     return (
                       <div
@@ -2160,10 +2195,19 @@ export default function ResultsPage() {
                           onError={(e) => {
                             // 이미지 로드 실패 시 대체 이미지 시도
                             const target = e.target as HTMLImageElement;
-                            if (image.thumbnailLink && target.src !== image.thumbnailLink) {
+                            // 프록시 URL이 실패한 경우 썸네일로 대체
+                            if ((image.downloadUrl && target.src.includes(image.downloadUrl)) || 
+                                (image.apiUrl && target.src.includes(image.apiUrl))) {
+                              if (image.thumbnailLink && target.src !== image.thumbnailLink) {
+                                target.src = image.thumbnailLink;
+                              } else if (image.webViewLink && target.src !== image.webViewLink) {
+                                target.src = image.webViewLink;
+                              } else {
+                                // 모든 URL 실패 시 플레이스홀더
+                                target.src = `data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='400' height='400'%3E%3Crect fill='%23ddd' width='400' height='400'/%3E%3Ctext fill='%23999' font-family='sans-serif' font-size='18' x='50%25' y='50%25' text-anchor='middle' dy='.3em'%3E이미지를 불러올 수 없습니다%3C/text%3E%3C/svg%3E`;
+                              }
+                            } else if (image.thumbnailLink && target.src !== image.thumbnailLink) {
                               target.src = image.thumbnailLink;
-                            } else if (image.webViewLink && target.src !== image.webViewLink) {
-                              target.src = image.webViewLink;
                             } else {
                               // 모든 URL 실패 시 플레이스홀더
                               target.src = `data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='400' height='400'%3E%3Crect fill='%23ddd' width='400' height='400'/%3E%3Ctext fill='%23999' font-family='sans-serif' font-size='18' x='50%25' y='50%25' text-anchor='middle' dy='.3em'%3E이미지를 불러올 수 없습니다%3C/text%3E%3C/svg%3E`;
@@ -2187,12 +2231,12 @@ export default function ResultsPage() {
                   </div>
 
                   {/* 페이지네이션 컨트롤 */}
-                  {pagination && (pagination.totalPages !== null && pagination.totalPages > 1 || pagination.hasNextPage) && (
+                  {pagination && pagination.totalPages > 1 && (
                     <div className="mt-8 flex flex-col items-center gap-4">
                       <div className="flex items-center gap-2">
                         <button
                           onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
-                          disabled={currentPage === 1 || isLoadingImages}
+                          disabled={!pagination.hasPreviousPage || isLoadingImages}
                           className="px-4 py-2 text-sm font-medium text-foreground bg-background border border-border rounded-lg hover:bg-muted disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                         >
                           <ChevronLeft className="w-4 h-4 inline-block mr-1" />
@@ -2200,41 +2244,33 @@ export default function ResultsPage() {
                         </button>
                         
                         <div className="flex items-center gap-1">
-                          {pagination.totalPages !== null ? (
-                            // 전체 페이지 수를 알고 있는 경우
-                            Array.from({ length: Math.min(5, pagination.totalPages) }, (_, i) => {
-                              let pageNum: number;
-                              if (pagination.totalPages! <= 5) {
-                                pageNum = i + 1;
-                              } else if (currentPage <= 3) {
-                                pageNum = i + 1;
-                              } else if (currentPage >= pagination.totalPages! - 2) {
-                                pageNum = pagination.totalPages! - 4 + i;
-                              } else {
-                                pageNum = currentPage - 2 + i;
-                              }
-                              
-                              return (
-                                <button
-                                  key={pageNum}
-                                  onClick={() => setCurrentPage(pageNum)}
-                                  disabled={isLoadingImages}
-                                  className={`px-3 py-2 text-sm font-medium rounded-lg transition-colors ${
-                                    currentPage === pageNum
-                                      ? 'bg-primary text-primary-foreground'
-                                      : 'text-foreground bg-background border border-border hover:bg-muted'
-                                  } disabled:opacity-50 disabled:cursor-not-allowed`}
-                                >
-                                  {pageNum}
-                                </button>
-                              );
-                            })
-                          ) : (
-                            // 전체 페이지 수를 모르는 경우 (현재 페이지만 표시)
-                            <span className="px-4 py-2 text-sm text-muted-foreground">
-                              페이지 {currentPage}
-                            </span>
-                          )}
+                          {Array.from({ length: Math.min(5, pagination.totalPages) }, (_, i) => {
+                            let pageNum: number;
+                            if (pagination.totalPages <= 5) {
+                              pageNum = i + 1;
+                            } else if (currentPage <= 3) {
+                              pageNum = i + 1;
+                            } else if (currentPage >= pagination.totalPages - 2) {
+                              pageNum = pagination.totalPages - 4 + i;
+                            } else {
+                              pageNum = currentPage - 2 + i;
+                            }
+                            
+                            return (
+                              <button
+                                key={pageNum}
+                                onClick={() => setCurrentPage(pageNum)}
+                                disabled={isLoadingImages}
+                                className={`px-3 py-2 text-sm font-medium rounded-lg transition-colors ${
+                                  currentPage === pageNum
+                                    ? 'bg-primary text-primary-foreground'
+                                    : 'text-foreground bg-background border border-border hover:bg-muted'
+                                } disabled:opacity-50 disabled:cursor-not-allowed`}
+                              >
+                                {pageNum}
+                              </button>
+                            );
+                          })}
                         </div>
                         
                         <button
@@ -2247,10 +2283,10 @@ export default function ResultsPage() {
                         </button>
                       </div>
                       
-                      {pagination.totalCount !== null && (
+                      {pagination && (
                         <p className="text-sm text-muted-foreground">
-                          전체 {pagination.totalCount.toLocaleString()}장 중 {((currentPage - 1) * pagination.limit + 1).toLocaleString()}-
-                          {Math.min(currentPage * pagination.limit, pagination.totalCount).toLocaleString()}장 표시
+                          전체 {pagination.totalItems.toLocaleString()}장 중 {((currentPage - 1) * 30 + 1).toLocaleString()}-
+                          {Math.min(currentPage * 30, pagination.totalItems).toLocaleString()}장 표시
                         </p>
                       )}
                     </div>
@@ -2326,7 +2362,7 @@ export default function ResultsPage() {
                     <div className="relative w-full h-full flex items-center justify-center p-0">
                       <img
                         key={selectedImage.id}
-                        src={selectedImage.apiUrl || selectedImage.thumbnailLink || selectedImage.downloadUrl || selectedImage.downloadUrl2 || selectedImage.webViewLink}
+                        src={selectedImage.apiUrl || selectedImage.downloadUrl || selectedImage.thumbnailLink || selectedImage.webViewLink}
                         alt={selectedImage.name || '스마트팜 교육 현장'}
                         className="w-auto h-auto"
                         style={{
@@ -2376,27 +2412,33 @@ export default function ResultsPage() {
                               downloadUrl2: selectedImage.downloadUrl2,
                               webViewLink: selectedImage.webViewLink,
                             },
+                            imageId: selectedImage.id,
+                            imageName: selectedImage.name,
                           });
                           
-                          // 대체 URL 순차적으로 시도 (API URL이 실패한 경우)
-                          if (selectedImage.apiUrl && target.src === selectedImage.apiUrl) {
-                            // API URL이 실패했으므로 다른 URL 시도
-                            if (selectedImage.thumbnailLink) {
+                          // 네트워크 에러 확인
+                          if (target.src.startsWith('/api/')) {
+                            console.error('프록시 URL 실패, 썸네일로 대체 시도');
+                          }
+                          
+                          // 대체 URL 순차적으로 시도
+                          // 1. 프록시 URL(apiUrl 또는 downloadUrl)이 실패한 경우 썸네일 시도
+                          if ((selectedImage.apiUrl && target.src.includes(selectedImage.apiUrl)) || 
+                              (selectedImage.downloadUrl && target.src.includes(selectedImage.downloadUrl))) {
+                            // 프록시 URL이 실패했으므로 썸네일로 대체
+                            if (selectedImage.thumbnailLink && !triedUrls.includes(selectedImage.thumbnailLink)) {
                               target.src = selectedImage.thumbnailLink;
-                            } else if (selectedImage.downloadUrl) {
-                              target.src = selectedImage.downloadUrl;
-                            } else if (selectedImage.downloadUrl2) {
-                              target.src = selectedImage.downloadUrl2;
+                              triedUrls.push(selectedImage.thumbnailLink);
+                            } else if (selectedImage.webViewLink && !triedUrls.includes(selectedImage.webViewLink)) {
+                              target.src = selectedImage.webViewLink;
+                              triedUrls.push(selectedImage.webViewLink);
+                            } else {
+                              // 모든 URL 실패 시 플레이스홀더
+                              target.src = `data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='800' height='600'%3E%3Crect fill='%23ddd' width='800' height='600'/%3E%3Ctext fill='%23999' font-family='sans-serif' font-size='24' x='50%25' y='50%25' text-anchor='middle' dy='.3em'%3E이미지를 불러올 수 없습니다%3C/text%3E%3C/svg%3E`;
                             }
                           } else if (selectedImage.thumbnailLink && !triedUrls.includes(selectedImage.thumbnailLink)) {
                             target.src = selectedImage.thumbnailLink;
                             triedUrls.push(selectedImage.thumbnailLink);
-                          } else if (selectedImage.downloadUrl && !triedUrls.includes(selectedImage.downloadUrl)) {
-                            target.src = selectedImage.downloadUrl;
-                            triedUrls.push(selectedImage.downloadUrl);
-                          } else if (selectedImage.downloadUrl2 && !triedUrls.includes(selectedImage.downloadUrl2)) {
-                            target.src = selectedImage.downloadUrl2;
-                            triedUrls.push(selectedImage.downloadUrl2);
                           } else {
                             // 모든 URL 실패 시 플레이스홀더
                             target.src = `data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='800' height='600'%3E%3Crect fill='%23ddd' width='800' height='600'/%3E%3Ctext fill='%23999' font-family='sans-serif' font-size='24' x='50%25' y='50%25' text-anchor='middle' dy='.3em'%3E이미지를 불러올 수 없습니다%3C/text%3E%3C/svg%3E`;
