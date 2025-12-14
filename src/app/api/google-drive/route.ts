@@ -33,25 +33,40 @@ export async function GET(request: NextRequest) {
       folderId = match ? match[1] : folderIdRaw;
     }
 
-    // 환경 변수 검증
-    if (!apiKey) {
+    // 환경 변수 검증 (더 엄격한 검증)
+    if (!apiKey || apiKey.trim() === '') {
       const errorMessage = process.env.NODE_ENV === 'production'
-        ? 'GOOGLE_API_KEY가 설정되지 않았습니다. Vercel 대시보드의 환경 변수 설정에서 GOOGLE_API_KEY 또는 GOOGLE_DRIVE_API_KEY를 추가해주세요.'
+        ? 'GOOGLE_API_KEY가 설정되지 않았습니다. Vercel 대시보드의 환경 변수 설정에서 GOOGLE_API_KEY 또는 GOOGLE_DRIVE_API_KEY를 추가해주세요. (현재 값: ' + (apiKey ? '비어있음' : '없음') + ')'
         : 'GOOGLE_API_KEY가 설정되지 않았습니다. .env.local 파일에 GOOGLE_API_KEY 또는 GOOGLE_DRIVE_API_KEY를 추가해주세요.';
+      console.error('API 키 검증 실패:', {
+        hasApiKey: !!apiKey,
+        apiKeyLength: apiKey?.length || 0,
+        apiKeyValue: apiKey ? `${apiKey.substring(0, 5)}...` : '없음',
+      });
       return NextResponse.json(
         { error: errorMessage },
         { status: 500 }
       );
     }
 
-    if (!folderId) {
+    if (!folderId || folderId.trim() === '') {
       const errorMessage = process.env.NODE_ENV === 'production'
-        ? 'DRIVE_FOLDER_ID가 설정되지 않았습니다. Vercel 대시보드의 환경 변수 설정에서 DRIVE_FOLDER_ID 또는 GOOGLE_DRIVE_FOLDER_ID를 추가해주세요.'
+        ? 'DRIVE_FOLDER_ID가 설정되지 않았습니다. Vercel 대시보드의 환경 변수 설정에서 DRIVE_FOLDER_ID 또는 GOOGLE_DRIVE_FOLDER_ID를 추가해주세요. (현재 값: ' + (folderId ? '비어있음' : '없음') + ')'
         : 'DRIVE_FOLDER_ID가 설정되지 않았습니다. .env.local 파일에 DRIVE_FOLDER_ID 또는 GOOGLE_DRIVE_FOLDER_ID를 추가해주세요.';
+      console.error('폴더 ID 검증 실패:', {
+        hasFolderId: !!folderId,
+        folderIdLength: folderId?.length || 0,
+        folderIdValue: folderId || '없음',
+      });
       return NextResponse.json(
         { error: errorMessage },
         { status: 500 }
       );
+    }
+    
+    // API 키 형식 검증 (Google API 키는 보통 39자)
+    if (apiKey.length < 30) {
+      console.warn('API 키 길이가 비정상적으로 짧습니다:', apiKey.length);
     }
 
     // Google Drive API 직접 호출 (HTTP 리퍼러 제한 우회)
@@ -136,44 +151,104 @@ export async function GET(request: NextRequest) {
     }
     
     let response;
-    try {
-      // Google Drive API 직접 호출 (HTTP 리퍼러 제한 우회)
-      // API 키를 쿼리 파라미터로 직접 전달
-      const apiUrl = new URL(`${driveApiBaseUrl}/files`);
-      apiUrl.searchParams.set('q', query);
-      apiUrl.searchParams.set('fields', 'files(id, name, thumbnailLink, webViewLink, mimeType, size), nextPageToken');
-      apiUrl.searchParams.set('orderBy', 'modifiedTime desc');
-      apiUrl.searchParams.set('pageSize', pageSize.toString());
-      apiUrl.searchParams.set('key', apiKey);
-      if (pageToken) {
-        apiUrl.searchParams.set('pageToken', pageToken);
-      }
-      
-      console.log('Google Drive API 직접 호출:', {
-        url: apiUrl.toString().replace(apiKey, 'API_KEY_HIDDEN'),
-        folderId: folderId,
-        query: query,
-      });
-      
-      const fetchResponse = await fetch(apiUrl.toString());
-      
-      if (!fetchResponse.ok) {
-        const errorData = await fetchResponse.json().catch(() => ({}));
-        const errorMessage = errorData.error?.message || `HTTP ${fetchResponse.status}`;
-        throw {
-          response: {
-            status: fetchResponse.status,
-            statusText: fetchResponse.statusText,
-            data: errorData,
+    let lastError: any = null;
+    
+    // 재시도 로직: 최대 2번 재시도
+    const maxRetries = 2;
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        // Google Drive API 직접 호출 (HTTP 리퍼러 제한 우회)
+        // API 키를 쿼리 파라미터로 직접 전달
+        const apiUrl = new URL(`${driveApiBaseUrl}/files`);
+        apiUrl.searchParams.set('q', query);
+        apiUrl.searchParams.set('fields', 'files(id, name, thumbnailLink, webViewLink, mimeType, size), nextPageToken');
+        apiUrl.searchParams.set('orderBy', 'modifiedTime desc');
+        apiUrl.searchParams.set('pageSize', pageSize.toString());
+        apiUrl.searchParams.set('key', apiKey);
+        if (pageToken) {
+          apiUrl.searchParams.set('pageToken', pageToken);
+        }
+        
+        console.log(`Google Drive API 직접 호출 (시도 ${attempt + 1}/${maxRetries + 1}):`, {
+          url: apiUrl.toString().replace(apiKey, 'API_KEY_HIDDEN'),
+          folderId: folderId,
+          query: query,
+        });
+        
+        // User-Agent 헤더 추가 (일부 경우 도움이 될 수 있음)
+        const fetchResponse = await fetch(apiUrl.toString(), {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (compatible; Next.js Server)',
           },
-          message: errorMessage,
-          code: fetchResponse.status,
+        });
+        
+        if (!fetchResponse.ok) {
+          const errorData = await fetchResponse.json().catch(() => ({}));
+          const errorMessage = errorData.error?.message || `HTTP ${fetchResponse.status}`;
+          
+          // 리퍼러 에러인 경우 재시도하지 않음 (설정 변경 필요)
+          if (errorMessage.includes('referer') || errorMessage.includes('referrer') || fetchResponse.status === 403) {
+            throw {
+              response: {
+                status: fetchResponse.status,
+                statusText: fetchResponse.statusText,
+                data: errorData,
+              },
+              message: errorMessage,
+              code: fetchResponse.status,
+            };
+          }
+          
+          // 일시적 에러인 경우 재시도
+          if (attempt < maxRetries && (fetchResponse.status === 429 || fetchResponse.status >= 500)) {
+            console.warn(`API 호출 실패, ${attempt + 1}초 후 재시도...`);
+            await new Promise(resolve => setTimeout(resolve, (attempt + 1) * 1000));
+            lastError = {
+              response: {
+                status: fetchResponse.status,
+                statusText: fetchResponse.statusText,
+                data: errorData,
+              },
+              message: errorMessage,
+              code: fetchResponse.status,
+            };
+            continue;
+          }
+          
+          throw {
+            response: {
+              status: fetchResponse.status,
+              statusText: fetchResponse.statusText,
+              data: errorData,
+            },
+            message: errorMessage,
+            code: fetchResponse.status,
+          };
+        }
+        
+        response = {
+          data: await fetchResponse.json(),
         };
+        
+        // 성공 시 루프 종료
+        break;
+      } catch (apiError: any) {
+        lastError = apiError;
+        
+        // 마지막 시도가 아니고 일시적 에러인 경우 계속
+        if (attempt < maxRetries && apiError?.code !== 403 && apiError?.code !== 404) {
+          continue;
+        }
+        
+        // 재시도 불가능한 에러이거나 마지막 시도인 경우 throw
+        throw apiError;
       }
-      
-      response = {
-        data: await fetchResponse.json(),
-      };
+    }
+    
+    // 모든 재시도 실패 시
+    if (!response) {
+      throw lastError || new Error('API 호출 실패');
+    }
     } catch (apiError: any) {
       // Google API 에러를 더 자세히 로깅
       const errorStatus = apiError?.response?.status || apiError?.status || apiError?.code;
