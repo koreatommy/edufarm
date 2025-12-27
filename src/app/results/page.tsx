@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, useRef, useCallback } from 'react';
+import Image from 'next/image';
 import { Header } from '@/components/layout/Header';
 import { Footer } from '@/components/layout/Footer';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -387,6 +388,20 @@ export default function ResultsPage() {
         // 응답 본문을 텍스트로 읽기 (한 번만)
         const responseText = await response.text();
         
+        // 응답 본문을 JSON으로 파싱 시도 (에러 응답도 JSON일 수 있음)
+        let data;
+        const isJsonResponse = contentType && contentType.includes('application/json');
+        
+        if (isJsonResponse && responseText) {
+          try {
+            data = JSON.parse(responseText);
+          } catch (parseError) {
+            console.error('JSON 파싱 오류:', parseError);
+            console.error('응답 본문 (처음 200자):', responseText.substring(0, 200));
+            throw new Error(`서버 응답을 파싱할 수 없습니다: ${responseText.substring(0, 100)}`);
+          }
+        }
+        
         // 응답 상태 확인
         if (!response.ok) {
           // HTML 응답인 경우 (404 등) - API 엔드포인트가 없는 경우
@@ -397,25 +412,37 @@ export default function ResultsPage() {
             setIsLoadingImages(false);
             return;
           }
+          
+          // JSON 응답인 경우 파싱된 에러 메시지 사용
+          if (isJsonResponse && data && data.error) {
+            let errorMessage = data.error || `서버 오류 (${response.status})`;
+            
+            // 추가 정보가 있으면 포함
+            if (data.details && process.env.NODE_ENV === 'development') {
+              errorMessage += `\n\n상세 정보: ${data.details}`;
+              console.error('API 에러 상세:', data.details);
+            }
+            
+            // 폴더 ID와 Service Account 정보가 있으면 포함
+            if (data.folderId || data.serviceAccount) {
+              console.error('API 설정 정보:', {
+                folderId: data.folderId,
+                serviceAccount: data.serviceAccount,
+              });
+            }
+            
+            throw new Error(errorMessage);
+          }
+          
+          // JSON이 아니거나 파싱 실패한 경우 기본 에러 메시지
           throw new Error(`서버 오류 (${response.status}): ${responseText.substring(0, 200)}`);
         }
         
         // Content-Type이 JSON이 아닌 경우
-        if (!contentType || !contentType.includes('application/json')) {
+        if (!isJsonResponse) {
           console.error('예상치 못한 응답 형식:', contentType);
           console.error('응답 본문 (처음 200자):', responseText.substring(0, 200));
           throw new Error(`서버가 JSON 형식이 아닌 응답을 반환했습니다. (Content-Type: ${contentType})`);
-        }
-        
-        // 응답 본문을 JSON으로 파싱
-        let data;
-        
-        try {
-          data = responseText ? JSON.parse(responseText) : {};
-        } catch (parseError) {
-          console.error('JSON 파싱 오류:', parseError);
-          console.error('응답 본문 (처음 200자):', responseText.substring(0, 200));
-          throw new Error(`서버 응답을 파싱할 수 없습니다: ${responseText.substring(0, 100)}`);
         }
         
         // 전체 응답 정보를 콘솔에 출력 (디버깅용)
@@ -427,19 +454,12 @@ export default function ResultsPage() {
           data: data,
         });
         
-        if (data.error) {
-          // 응답 본문에서 에러 메시지 추출
+        // 정상 응답에서도 에러 필드가 있는지 확인
+        if (data && data.error) {
           let errorMessage = data.error || `서버 오류 (${response.status})`;
           
-          // 추가 정보가 있으면 포함
-          if (data.message && data.message !== errorMessage) {
-            errorMessage += `: ${data.message}`;
-          } else if (data.status && data.status !== response.status) {
-            errorMessage += ` (상태 코드: ${data.status})`;
-          }
-          
-          // 개발 환경에서 더 자세한 정보 표시
-          if (process.env.NODE_ENV === 'development' && data.details) {
+          if (data.details && process.env.NODE_ENV === 'development') {
+            errorMessage += `\n\n상세 정보: ${data.details}`;
             console.error('API 에러 상세:', data.details);
           }
           
@@ -2050,6 +2070,19 @@ export default function ResultsPage() {
               </div>
             </div>
 
+            {/* 스마트팜 교육 발전 방향 인포그래픽 */}
+            <div className="mb-8">
+              <Image
+                key="smart-farm-development-directions"
+                src="/imgs/map.png"
+                alt="스마트팜 교육, 미래를 향한 3대 발전 방향 - 금산교육발전특구, 지속 가능한 미래 인재 양성을 위한 핵심 전략"
+                width={1200}
+                height={800}
+                className="w-full h-auto rounded-lg shadow-lg"
+                priority={false}
+              />
+            </div>
+
             {/* 마무리 메시지 */}
             <Card className="border-2 border-primary/20 bg-gradient-to-br from-primary/5 via-background to-primary/5">
               <CardContent className="p-8 text-center">
@@ -2087,7 +2120,7 @@ export default function ResultsPage() {
             <div className="mb-12">
               <h3 className="text-xl md:text-2xl font-semibold mb-6 flex items-center gap-3">
                 <Video className="w-6 h-6 text-primary" />
-                교육 하이라이트 영상
+                스마트팜 학과 홍보 영상
               </h3>
               <div className="bg-card rounded-xl overflow-hidden shadow-2xl border border-border">
                 {/* YouTube 스타일 비디오 플레이어 */}
