@@ -202,12 +202,12 @@ Google Drive에서 폴더를 공유하고 Service Account(${serviceAccountEmail}
     const now = Date.now();
     const useCache = totalItemsCache && (now - totalItemsCache.timestamp) < CACHE_DURATION;
     
-    if (useCache && !skipCount && totalItemsCache) {
-      // 캐시된 값 사용
+    if (useCache && totalItemsCache) {
+      // 캐시된 값 사용 (skipCount와 관계없이 캐시 사용)
       totalItems = totalItemsCache.count;
       totalPages = Math.ceil(totalItems / fixedLimit);
     } else if (!skipCount) {
-      // 전체 개수 계산 (최적화: pageSize를 최대값으로 사용)
+      // skipCount가 false인 경우에만 전체 개수 계산 (최적화: pageSize를 최대값으로 사용)
       let nextPageToken: string | undefined = undefined;
       
       // eslint-disable-next-line no-constant-condition
@@ -234,10 +234,34 @@ Google Drive에서 폴더를 공유하고 Service Account(${serviceAccountEmail}
       
       totalPages = Math.ceil(totalItems / fixedLimit);
     } else {
-      // skipCount가 true인 경우: 추정치 사용 (현재 페이지 기준)
-      // 정확한 개수는 모르지만, 다음 페이지 존재 여부로 추정
-      totalItems = 0; // 알 수 없음
-      totalPages = 0; // 알 수 없음
+      // skipCount가 true이고 캐시가 없는 경우: 추정치 사용하지 않음
+      // 대신 전체 개수를 계산하거나 캐시를 기다림
+      // 정확성을 위해 전체 개수 계산
+      let nextPageToken: string | undefined = undefined;
+      
+      // eslint-disable-next-line no-constant-condition
+      while (true) {
+        const countResponse = await drive.files.list({
+          q: `'${folderId}' in parents and mimeType contains 'image/' and trashed = false`,
+          fields: 'nextPageToken, files(id)',
+          pageSize: 1000, // Google Drive API 최대값
+          pageToken: nextPageToken,
+        }) as { data: { files?: Array<{ id?: string | null }>; nextPageToken?: string | null } };
+        
+        const files = countResponse.data.files || [];
+        totalItems += files.length;
+        nextPageToken = countResponse.data.nextPageToken || undefined;
+        
+        if (!nextPageToken) break;
+      }
+      
+      // 캐시 업데이트
+      totalItemsCache = {
+        count: totalItems,
+        timestamp: now,
+      };
+      
+      totalPages = Math.ceil(totalItems / fixedLimit);
     }
 
     // 현재 페이지 데이터 조회 (최적화된 페이지 이동)
@@ -289,14 +313,6 @@ Google Drive에서 폴더를 공유하고 Service Account(${serviceAccountEmail}
 
     const files = response.data.files || [];
     const hasNextPage = !!response.data.nextPageToken;
-    
-    // skipCount가 true이고 totalItems가 0인 경우, 추정치 계산
-    if (skipCount && totalItems === 0) {
-      // 현재 페이지 번호와 다음 페이지 존재 여부로 추정
-      // 정확하지 않지만 대략적인 값 제공
-      totalItems = page * fixedLimit + (hasNextPage ? fixedLimit : files.length);
-      totalPages = Math.ceil(totalItems / fixedLimit);
-    }
 
     // 이미지 메타데이터 생성
     const images: DriveImage[] = files.map((file) => {

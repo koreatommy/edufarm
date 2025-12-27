@@ -340,6 +340,7 @@ export default function ResultsPage() {
   const [selectedImage, setSelectedImage] = useState<GoogleDriveImage | null>(null);
   const [imageDimensions, setImageDimensions] = useState<{ width: number; height: number } | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
+  const imageErrorTriesRef = useRef<Map<string, Set<string>>>(new Map()); // 이미지 ID별 시도한 URL 추적
   const [pagination, setPagination] = useState<{
     currentPage: number;
     totalPages: number;
@@ -492,6 +493,11 @@ export default function ResultsPage() {
   useEffect(() => {
     fetchImages();
   }, [fetchImages]);
+
+  // 이미지 목록이 변경될 때마다 시도한 URL 목록 초기화
+  useEffect(() => {
+    imageErrorTriesRef.current.clear();
+  }, [galleryImages]);
 
   return (
     <>
@@ -2216,9 +2222,15 @@ export default function ResultsPage() {
                       wide: 'aspect-[4/3] md:aspect-[3/2]',
                     };
                     
-                    // 갤러리 목록에서는 최적화된 썸네일(640px)을 우선 사용하여 빠른 로딩 (클릭 시 원본 이미지 표시)
-                    const optimizedThumbnail = image.thumbnailLink ? getOptimizedThumbnailUrl(image.thumbnailLink, 640) : '';
-                    const imageUrl = optimizedThumbnail || image.webViewLink || image.downloadUrl || image.apiUrl;
+                    // 프록시 URL을 우선 사용 (서버에서 인증 처리하여 안정적)
+                    // 프록시 URL이 실패하면 썸네일로 대체
+                    const imageUrl = image.apiUrl || image.downloadUrl || (image.thumbnailLink ? getOptimizedThumbnailUrl(image.thumbnailLink, 640) : '') || image.webViewLink;
+                    
+                    // 해당 이미지의 시도한 URL 목록 가져오기
+                    if (!imageErrorTriesRef.current.has(image.id)) {
+                      imageErrorTriesRef.current.set(image.id, new Set());
+                    }
+                    const triedUrls = imageErrorTriesRef.current.get(image.id)!;
                     
                     return (
                       <div
@@ -2233,21 +2245,44 @@ export default function ResultsPage() {
                           className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
                           loading="lazy"
                           onError={(e) => {
-                            // 이미지 로드 실패 시 대체 이미지 시도
                             const target = e.target as HTMLImageElement;
-                            // 프록시 URL이 실패한 경우 썸네일로 대체
-                            if ((image.downloadUrl && target.src.includes(image.downloadUrl)) || 
-                                (image.apiUrl && target.src.includes(image.apiUrl))) {
-                              if (image.thumbnailLink && target.src !== image.thumbnailLink) {
-                                target.src = image.thumbnailLink;
-                              } else if (image.webViewLink && target.src !== image.webViewLink) {
-                                target.src = image.webViewLink;
-                              } else {
-                                // 모든 URL 실패 시 플레이스홀더
-                                target.src = `data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='400' height='400'%3E%3Crect fill='%23ddd' width='400' height='400'/%3E%3Ctext fill='%23999' font-family='sans-serif' font-size='18' x='50%25' y='50%25' text-anchor='middle' dy='.3em'%3E이미지를 불러올 수 없습니다%3C/text%3E%3C/svg%3E`;
+                            const currentSrc = target.src;
+                            
+                            // 현재 URL을 시도한 목록에 추가
+                            triedUrls.add(currentSrc);
+                            
+                            // 대체 URL 순차적으로 시도
+                            let nextUrl = '';
+                            
+                            // 프록시 URL(apiUrl 또는 downloadUrl)이 실패한 경우
+                            if (currentSrc === image.apiUrl || currentSrc === image.downloadUrl) {
+                              // 썸네일 시도
+                              if (image.thumbnailLink) {
+                                const thumbnailUrl = getOptimizedThumbnailUrl(image.thumbnailLink, 640);
+                                if (!triedUrls.has(thumbnailUrl)) {
+                                  nextUrl = thumbnailUrl;
+                                }
                               }
-                            } else if (image.thumbnailLink && target.src !== image.thumbnailLink) {
-                              target.src = image.thumbnailLink;
+                              // 썸네일이 없거나 이미 시도했다면 webViewLink 시도
+                              if (!nextUrl && image.webViewLink && !triedUrls.has(image.webViewLink)) {
+                                nextUrl = image.webViewLink;
+                              }
+                            }
+                            // 썸네일이 실패한 경우
+                            else if (image.thumbnailLink && currentSrc.includes(image.thumbnailLink)) {
+                              // webViewLink 시도
+                              if (image.webViewLink && !triedUrls.has(image.webViewLink)) {
+                                nextUrl = image.webViewLink;
+                              }
+                            }
+                            // webViewLink가 실패한 경우
+                            else if (image.webViewLink && currentSrc === image.webViewLink) {
+                              // 더 이상 대체 URL이 없음
+                            }
+                            
+                            if (nextUrl) {
+                              triedUrls.add(nextUrl);
+                              target.src = nextUrl;
                             } else {
                               // 모든 URL 실패 시 플레이스홀더
                               target.src = `data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='400' height='400'%3E%3Crect fill='%23ddd' width='400' height='400'/%3E%3Ctext fill='%23999' font-family='sans-serif' font-size='18' x='50%25' y='50%25' text-anchor='middle' dy='.3em'%3E이미지를 불러올 수 없습니다%3C/text%3E%3C/svg%3E`;
