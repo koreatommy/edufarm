@@ -79,6 +79,7 @@ export async function GET(request: NextRequest) {
     const page = parseInt(searchParams.get('page') || '1', 10);
     const limit = parseInt(searchParams.get('limit') || '30', 10);
     const skipCount = searchParams.get('skipCount') === 'true';
+    const invalidateCache = searchParams.get('invalidateCache') === 'true';
 
     // limit을 30으로 고정
     const fixedLimit = 30;
@@ -200,6 +201,10 @@ Google Drive에서 폴더를 공유하고 Service Account(${serviceAccountEmail}
     
     // 캐시 확인
     const now = Date.now();
+    // invalidateCache가 true이면 캐시를 무효화
+    if (invalidateCache) {
+      totalItemsCache = null;
+    }
     const useCache = totalItemsCache && (now - totalItemsCache.timestamp) < CACHE_DURATION;
     
     if (useCache && totalItemsCache) {

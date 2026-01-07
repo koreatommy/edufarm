@@ -129,16 +129,29 @@ export async function GET(
         } else if (googleError.code === 403) {
           errorMessage = '이미지 파일 접근 권한이 없습니다.';
           statusCode = 403;
+        } else if (googleError.code === 401) {
+          errorMessage = '인증에 실패했습니다.';
+          statusCode = 401;
         }
       }
     }
 
+    // 클라이언트가 이미지로 로드하려고 할 때 JSON 에러가 표시되지 않도록
+    // 404나 403 같은 경우에는 적절한 상태 코드를 반환하되,
+    // 500 에러의 경우에도 클라이언트가 대체 URL로 전환할 수 있도록 처리
     return NextResponse.json(
       { 
         error: errorMessage,
         details: process.env.NODE_ENV === 'development' ? errorDetails : undefined,
+        fileId: fileId,
       },
-      { status: statusCode }
+      { 
+        status: statusCode,
+        headers: {
+          'Content-Type': 'application/json',
+          'Cache-Control': 'no-store, max-age=0', // 에러 응답은 캐시하지 않음
+        },
+      }
     );
   }
 }

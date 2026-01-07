@@ -605,7 +605,7 @@ export default function HomePage() {
                       </p>
                       <div className="pl-4 border-l-2 border-primary/30 py-2">
                         <p className="text-muted-foreground text-lg leading-relaxed">
-                          영유아·초등학생 스마트팜 체험교육 개발·운영 및 청년 농업인 육성 지원
+                          초중고 학생 스마트팜 체험교육 개발·운영 및 청년 농업인 육성 지원
                         </p>
                       </div>
                     </CardContent>

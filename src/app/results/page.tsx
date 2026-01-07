@@ -331,6 +331,103 @@ function getOptimizedThumbnailUrl(thumbnailLink: string, size: number = 640): st
   return `${thumbnailLink}${separator}sz=s${size}`;
 }
 
+// 설문조사 만족도 데이터 (금산산업고등학교 대상, 22명 응답)
+const surveyData = [
+  {
+    id: 1,
+    question: '오늘의 강의가 재미있었나요?',
+    shortQuestion: '강의 재미',
+    score: 100,
+    avgScore: 4.45,
+    verySatisfied: 10,
+    satisfied: 12,
+    normal: 0,
+    dissatisfied: 0,
+    veryDissatisfied: 0,
+  },
+  {
+    id: 2,
+    question: '수업을 통해 스마트팜 산업의 미래 가능성을 이해하는 데 도움이 되었나요?',
+    shortQuestion: '미래 가능성 이해',
+    score: 100,
+    avgScore: 4.45,
+    verySatisfied: 10,
+    satisfied: 12,
+    normal: 0,
+    dissatisfied: 0,
+    veryDissatisfied: 0,
+  },
+  {
+    id: 3,
+    question: '스마트팜에 쓰이는 기술이 무엇이 있는지 알게 되었나요?',
+    shortQuestion: '기술 이해',
+    score: 100,
+    avgScore: 4.45,
+    verySatisfied: 10,
+    satisfied: 12,
+    normal: 0,
+    dissatisfied: 0,
+    veryDissatisfied: 0,
+  },
+  {
+    id: 4,
+    question: '신기술 체험(사물인터넷하우스, 디지털 프린팅)이 흥미로웠나요?',
+    shortQuestion: '신기술 체험',
+    score: 100,
+    avgScore: 4.77,
+    verySatisfied: 17,
+    satisfied: 5,
+    normal: 0,
+    dissatisfied: 0,
+    veryDissatisfied: 0,
+  },
+  {
+    id: 5,
+    question: '수업을 통해 스마트팜이 무엇인지 알게 되었나요?',
+    shortQuestion: '스마트팜 개념',
+    score: 100,
+    avgScore: 4.59,
+    verySatisfied: 13,
+    satisfied: 11,
+    normal: 0,
+    dissatisfied: 0,
+    veryDissatisfied: 0,
+  },
+  {
+    id: 6,
+    question: '스마트팜 창업 수업이 본인의 진로 탐색(농업, 기술, 창업 등)에 도움이 되었나요?',
+    shortQuestion: '진로 탐색',
+    score: 90,
+    avgScore: 4.5,
+    verySatisfied: 17,
+    satisfied: 3,
+    normal: 2,
+    dissatisfied: 0,
+    veryDissatisfied: 0,
+  },
+  {
+    id: 7,
+    question: '내년에도 같은 스마트팜 수업이 있다면 참여하고 싶은가요?',
+    shortQuestion: '내년 참여 의향',
+    score: 86,
+    avgScore: 4.3,
+    verySatisfied: 12,
+    satisfied: 7,
+    normal: 3,
+    dissatisfied: 0,
+    veryDissatisfied: 0,
+  },
+];
+
+// 설문조사 차트용 색상
+const SURVEY_COLORS = {
+  verySatisfied: '#10b981', // emerald-500
+  satisfied: '#6ee7b7', // emerald-300
+  normal: '#fbbf24', // amber-400
+  dissatisfied: '#fb923c', // orange-400
+  veryDissatisfied: '#ef4444', // red-500
+};
+
 export default function ResultsPage() {
   const { resolvedTheme } = useTheme();
   const textColor = resolvedTheme === 'dark' ? '#e4e4e7' : '#18181b'; // zinc-200 for dark, zinc-900 for light
@@ -339,6 +436,7 @@ export default function ResultsPage() {
   const [imageError, setImageError] = useState<string | null>(null);
   const [selectedImage, setSelectedImage] = useState<GoogleDriveImage | null>(null);
   const [imageDimensions, setImageDimensions] = useState<{ width: number; height: number } | null>(null);
+  const imageLoadSuccessRef = useRef<boolean>(false); // 이미지 로드 성공 여부 추적
   const [currentPage, setCurrentPage] = useState(1);
   const imageErrorTriesRef = useRef<Map<string, Set<string>>>(new Map()); // 이미지 ID별 시도한 URL 추적
   const [pagination, setPagination] = useState<{
@@ -373,15 +471,20 @@ export default function ResultsPage() {
   }, []);
 
   // Google Drive에서 이미지 불러오기 함수
-  const fetchImages = useCallback(async () => {
+  const fetchImages = useCallback(async (invalidateCache = false, pageOverride?: number) => {
       try {
         setIsLoadingImages(true);
         setImageError(null);
         
+        // pageOverride가 제공되면 사용, 아니면 currentPage 사용
+        const pageToUse = pageOverride ?? currentPage;
+        
         // limit은 항상 30으로 고정
         // 첫 페이지가 아니면 skipCount=true로 설정하여 전체 개수 계산 생략 (성능 향상)
-        const skipCount = currentPage > 1;
-        const response = await fetch(`/api/google-drive?page=${currentPage}&limit=30&skipCount=${skipCount}`);
+        const skipCount = pageToUse > 1;
+        // invalidateCache가 true이면 캐시 무효화 파라미터 추가
+        const cacheParam = invalidateCache ? '&invalidateCache=true' : '';
+        const response = await fetch(`/api/google-drive?page=${pageToUse}&limit=30&skipCount=${skipCount}${cacheParam}`);
         
         // Content-Type 헤더 확인
         const contentType = response.headers.get('content-type');
@@ -822,7 +925,7 @@ export default function ResultsPage() {
               <Card className="hover:shadow-lg transition-shadow text-center">
                 <CardContent className="pt-6">
                   <div className="text-3xl md:text-4xl font-bold text-primary mb-2">
-                    <CountUp end={52} />
+                    <CountUp end={58} />
                   </div>
                   <p className="text-sm md:text-base text-muted-foreground font-medium">학급</p>
                 </CardContent>
@@ -830,7 +933,7 @@ export default function ResultsPage() {
               <Card className="hover:shadow-lg transition-shadow text-center">
                 <CardContent className="pt-6">
                   <div className="text-3xl md:text-4xl font-bold text-primary mb-2">
-                    <CountUp end={777} />
+                    <CountUp end={839} />
                   </div>
                   <p className="text-sm md:text-base text-muted-foreground font-medium">학생</p>
                 </CardContent>
@@ -838,7 +941,7 @@ export default function ResultsPage() {
               <Card className="hover:shadow-lg transition-shadow text-center">
                 <CardContent className="pt-6">
                   <div className="text-3xl md:text-4xl font-bold text-primary mb-2">
-                    <CountUp end={177} />
+                    <CountUp end={239} />
                   </div>
                   <p className="text-sm md:text-base text-muted-foreground font-medium">초등학생</p>
                 </CardContent>
@@ -864,10 +967,10 @@ export default function ResultsPage() {
             <div className="space-y-4 leading-relaxed text-base md:text-lg">
               <p>
                 운영기간 동안 본 프로그램은 총{' '}
-                <CountUp end={52} className="text-primary text-2xl font-bold" />개 학급을 대상으로 실시되었으며, 총{' '}
-                <CountUp end={777} className="text-primary text-2xl font-bold" />명의 학생이 교육에 참여하였다.
+                <CountUp end={58} className="text-primary text-2xl font-bold" />개 학급을 대상으로 실시되었으며, 총{' '}
+                <CountUp end={839} className="text-primary text-2xl font-bold" />명의 학생이 교육에 참여하였다.
                 이를 학교급별로 구분하면 초등학생{' '}
-                <CountUp end={177} className="text-primary font-semibold" />명, 중학생{' '}
+                <CountUp end={239} className="text-primary font-semibold" />명, 중학생{' '}
                 <CountUp end={531} className="text-primary font-semibold" />명, 고등학생{' '}
                 <CountUp end={69} className="text-primary font-semibold" />명으로 집계되었다.
               </p>
@@ -889,9 +992,9 @@ export default function ResultsPage() {
                           <PieChart>
                             <Pie
                               data={[
-                                { name: '중학생', value: 68, color: '#3b82f6' },
-                                { name: '초등학생', value: 23, color: '#10b981' },
-                                { name: '고등학생', value: 9, color: '#f59e0b' },
+                                { name: '중학생', value: 63, color: '#3b82f6' },
+                                { name: '초등학생', value: 29, color: '#10b981' },
+                                { name: '고등학생', value: 8, color: '#f59e0b' },
                               ]}
                               cx="50%"
                               cy="50%"
@@ -902,9 +1005,9 @@ export default function ResultsPage() {
                               dataKey="value"
                             >
                               {[
-                                { name: '중학생', value: 68, color: '#3b82f6' },
-                                { name: '초등학생', value: 23, color: '#10b981' },
-                                { name: '고등학생', value: 9, color: '#f59e0b' },
+                                { name: '중학생', value: 63, color: '#3b82f6' },
+                                { name: '초등학생', value: 29, color: '#10b981' },
+                                { name: '고등학생', value: 8, color: '#f59e0b' },
                               ].map((entry, index) => (
                                 <Cell key={`cell-${index}`} fill={entry.color} />
                               ))}
@@ -934,9 +1037,9 @@ export default function ResultsPage() {
                         <ResponsiveContainer width="100%" height="100%" minHeight={256}>
                           <BarChart
                             data={[
-                              { name: '중학생', 비율: 68, color: '#3b82f6' },
-                              { name: '초등학생', 비율: 23, color: '#10b981' },
-                              { name: '고등학생', 비율: 9, color: '#f59e0b' },
+                              { name: '중학생', 비율: 63, color: '#3b82f6' },
+                              { name: '초등학생', 비율: 29, color: '#10b981' },
+                              { name: '고등학생', 비율: 8, color: '#f59e0b' },
                             ]}
                             layout="vertical"
                             margin={{ top: 20, right: 30, left: 60, bottom: 5 }}
@@ -964,9 +1067,9 @@ export default function ResultsPage() {
                             />
                             <Bar dataKey="비율" radius={[0, 8, 8, 0]}>
                               {[
-                                { name: '중학생', 비율: 68, color: '#3b82f6' },
-                                { name: '초등학생', 비율: 23, color: '#10b981' },
-                                { name: '고등학생', 비율: 9, color: '#f59e0b' },
+                                { name: '중학생', 비율: 63, color: '#3b82f6' },
+                                { name: '초등학생', 비율: 29, color: '#10b981' },
+                                { name: '고등학생', 비율: 8, color: '#f59e0b' },
                               ].map((entry, index) => (
                                 <Cell key={`cell-${index}`} fill={entry.color} />
                               ))}
@@ -987,7 +1090,7 @@ export default function ResultsPage() {
                           </div>
                           <div>
                             <div className="text-sm text-muted-foreground">중학생</div>
-                            <div className="text-2xl font-bold text-blue-600 dark:text-blue-400">68%</div>
+                            <div className="text-2xl font-bold text-blue-600 dark:text-blue-400">63%</div>
                           </div>
                         </div>
                         <div className="space-y-2 text-sm">
@@ -1016,19 +1119,19 @@ export default function ResultsPage() {
                           </div>
                           <div>
                             <div className="text-sm text-muted-foreground">초등학생</div>
-                            <div className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">23%</div>
+                            <div className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">29%</div>
                           </div>
                         </div>
                         <div className="space-y-2 text-sm">
                           <div className="flex justify-between">
                             <span className="text-muted-foreground">참여 인원</span>
                             <span className="font-semibold">
-                              <CountUp end={177} />명
+                              <CountUp end={239} />명
                             </span>
                           </div>
                           <div className="flex justify-between">
                             <span className="text-muted-foreground">참여 학급</span>
-                            <span className="font-semibold">31학급</span>
+                            <span className="font-semibold">35학급</span>
                           </div>
                           <div className="pt-2 border-t border-emerald-200 dark:border-emerald-800">
                             <div className="text-xs text-muted-foreground">가장 많은 학급 참여</div>
@@ -1045,7 +1148,7 @@ export default function ResultsPage() {
                           </div>
                           <div>
                             <div className="text-sm text-muted-foreground">고등학생</div>
-                            <div className="text-2xl font-bold text-amber-600 dark:text-amber-400">9%</div>
+                            <div className="text-2xl font-bold text-amber-600 dark:text-amber-400">8%</div>
                           </div>
                         </div>
                         <div className="space-y-2 text-sm">
@@ -1070,9 +1173,9 @@ export default function ResultsPage() {
               </Card>
 
               <p>
-                중학생 참여자가 전체의 약 <span className="text-primary font-semibold">68%</span>로 가장 큰 비중을 차지하였고,
-                초등 <span className="text-primary font-semibold">23%</span>, 고등{' '}
-                <span className="text-primary font-semibold">9%</span> 순으로 뒤를 이었다.
+                중학생 참여자가 전체의 약 <span className="text-primary font-semibold">63%</span>로 가장 큰 비중을 차지하였고,
+                초등 <span className="text-primary font-semibold">29%</span>, 고등{' '}
+                <span className="text-primary font-semibold">8%</span> 순으로 뒤를 이었다.
                 이는 프로그램이 중학교를 중심으로 집중 운영되었음을 보여주며, 동시에 초등부터 고등까지 고르게 참여가 이루어졌음을 의미한다.
               </p>
               {/* 참여 학급 수 그래프 */}
@@ -1088,7 +1191,7 @@ export default function ResultsPage() {
                     <ResponsiveContainer width="100%" height="100%" minHeight={256}>
                       <BarChart
                         data={[
-                          { name: '초등', 학급: 31, color: '#10b981' },
+                          { name: '초등', 학급: 35, color: '#10b981' },
                           { name: '중등', 학급: 20, color: '#3b82f6' },
                           { name: '고등', 학급: 3, color: '#f59e0b' },
                         ]}
@@ -1115,7 +1218,7 @@ export default function ResultsPage() {
                         />
                         <Bar dataKey="학급" radius={[8, 8, 0, 0]}>
                           {[
-                            { name: '초등', 학급: 31, color: '#10b981' },
+                            { name: '초등', 학급: 35, color: '#10b981' },
                             { name: '중등', 학급: 20, color: '#3b82f6' },
                             { name: '고등', 학급: 3, color: '#f59e0b' },
                           ].map((entry, index) => (
@@ -1127,7 +1230,7 @@ export default function ResultsPage() {
                   </div>
                   <div className="grid grid-cols-4 gap-4 mt-4 text-center">
                     <div className="p-3 bg-emerald-50 dark:bg-emerald-950/20 rounded-lg border border-emerald-200 dark:border-emerald-800">
-                      <div className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">31</div>
+                      <div className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">35</div>
                       <div className="text-sm text-muted-foreground">초등</div>
                     </div>
                     <div className="p-3 bg-blue-50 dark:bg-blue-950/20 rounded-lg border border-blue-200 dark:border-blue-800">
@@ -1139,7 +1242,7 @@ export default function ResultsPage() {
                       <div className="text-sm text-muted-foreground">고등</div>
                     </div>
                     <div className="p-3 bg-primary/10 rounded-lg border border-primary/20">
-                      <div className="text-2xl font-bold text-primary">52</div>
+                      <div className="text-2xl font-bold text-primary">58</div>
                       <div className="text-sm text-muted-foreground">총계</div>
                     </div>
                   </div>
@@ -1147,10 +1250,10 @@ export default function ResultsPage() {
               </Card>
 
               <p>
-                참여 학급 수 측면에서는 초등 <span className="text-primary font-semibold">31학급</span>, 중등{' '}
+                참여 학급 수 측면에서는 초등 <span className="text-primary font-semibold">35학급</span>, 중등{' '}
                 <span className="text-primary font-semibold">20학급</span>, 고등{' '}
                 <span className="text-primary font-semibold">3학급</span> 등 총{' '}
-                <span className="text-primary text-2xl font-bold">52</span>학급이 프로그램에 참여하여
+                <span className="text-primary text-2xl font-bold">58</span>학급이 프로그램에 참여하여
                 학교 현장에서의 실행률이 매우 높았다. 이를 통해 짧은 학기 동안 지역 내 다수 학급에 프로그램이 침투되었음을 알 수 있다.
               </p>
 
@@ -1169,7 +1272,7 @@ export default function ResultsPage() {
                         <Calendar className="w-8 h-8 text-blue-600 dark:text-blue-400" />
                       </div>
                       <div className="text-4xl font-bold text-blue-600 dark:text-blue-400 mb-2">
-                        <CountUp end={52} />
+                        <CountUp end={58} />
                       </div>
                       <div className="text-base font-semibold text-blue-700 dark:text-blue-300 mb-1">총 교육 회차</div>
                       <div className="text-xs text-muted-foreground">약 4개월간 운영</div>
@@ -1179,7 +1282,7 @@ export default function ResultsPage() {
                         <Users className="w-8 h-8 text-emerald-600 dark:text-emerald-400" />
                       </div>
                       <div className="text-4xl font-bold text-emerald-600 dark:text-emerald-400 mb-2">
-                        <CountUp end={777} />
+                        <CountUp end={839} />
                       </div>
                       <div className="text-base font-semibold text-emerald-700 dark:text-emerald-300 mb-1">총 참여 학생</div>
                       <div className="text-xs text-muted-foreground">전체 참여 인원</div>
@@ -1189,10 +1292,10 @@ export default function ResultsPage() {
                         <TrendingUp className="w-8 h-8 text-amber-600 dark:text-amber-400" />
                       </div>
                       <div className="text-4xl font-bold text-amber-600 dark:text-amber-400 mb-2">
-                        <CountUp end={15} />
+                        <CountUp end={14} />
                       </div>
                       <div className="text-base font-semibold text-amber-700 dark:text-amber-300 mb-1">회당 평균 인원</div>
-                      <div className="text-xs text-muted-foreground">777명 ÷ 52회</div>
+                      <div className="text-xs text-muted-foreground">839명 ÷ 58회</div>
                     </div>
                   </div>
                   
@@ -1201,21 +1304,21 @@ export default function ResultsPage() {
                     <div className="flex flex-col md:flex-row items-center justify-center gap-4 md:gap-6">
                       <div className="text-center">
                         <div className="text-2xl font-bold text-primary mb-1">
-                          <CountUp end={777} />
+                          <CountUp end={839} />
                         </div>
                         <div className="text-sm text-muted-foreground">총 참여 학생</div>
                       </div>
                       <div className="text-2xl text-muted-foreground">÷</div>
                       <div className="text-center">
                         <div className="text-2xl font-bold text-primary mb-1">
-                          <CountUp end={52} />
+                          <CountUp end={58} />
                         </div>
                         <div className="text-sm text-muted-foreground">총 교육 회차</div>
                       </div>
                       <div className="text-2xl text-muted-foreground">=</div>
                       <div className="text-center">
                         <div className="text-3xl font-bold text-primary mb-1">
-                          <CountUp end={15} />
+                          <CountUp end={14} />
                         </div>
                         <div className="text-sm text-muted-foreground">회당 평균 인원</div>
                       </div>
@@ -1226,9 +1329,9 @@ export default function ResultsPage() {
 
               <p>
                 한편 <strong className="text-primary font-semibold">교육 밀도(회당 참여 인원)</strong>를 살펴보면, 총{' '}
-                <span className="text-primary text-2xl font-bold">52</span>회 교육에{' '}
-                <span className="text-primary text-2xl font-bold">777</span>명이 참여하여
-                회당 평균 약 <span className="text-primary font-semibold">15명</span>의 학생이 수업을 받은 것으로 계산된다.
+                <span className="text-primary text-2xl font-bold">58</span>회 교육에{' '}
+                <span className="text-primary text-2xl font-bold">839</span>명이 참여하여
+                회당 평균 약 <span className="text-primary font-semibold">14명</span>의 학생이 수업을 받은 것으로 계산된다.
               </p>
 
               {/* 학년별 회당 참여 인원 레이더 차트 */}
@@ -1437,7 +1540,7 @@ export default function ResultsPage() {
                         <CheckCircle2 className="w-8 h-8 text-emerald-600 dark:text-emerald-400" />
                         <div>
                           <div className="text-3xl font-bold text-emerald-600 dark:text-emerald-400">
-                            <CountUp end={52} />
+                            <CountUp end={58} />
                           </div>
                           <div className="text-sm text-muted-foreground">회차 모두 완료</div>
                         </div>
@@ -1468,7 +1571,7 @@ export default function ResultsPage() {
               <CardContent className="pt-6">
                 <p className="leading-relaxed text-base md:text-lg">
                   참여율: 프로그램 참여율은 매우 높았다. 사전에 계획된{' '}
-                  <span className="text-primary text-2xl font-bold">52</span>회차 교육이{' '}
+                  <span className="text-primary text-2xl font-bold">58</span>회차 교육이{' '}
                   <span className="text-primary text-2xl font-bold">100%</span> 예정대로 실시되었고,
                   참여 학교 및 학급의 취소나 이탈 없이 모두 완료되었다. 이는 학교 현장에서의 협조와 학생들의 높은 관심으로
                   <strong className="text-primary font-semibold"> 운영계획 대비 달성률 100%</strong>의 성과를 이룬 것으로 해석된다.
@@ -1495,7 +1598,7 @@ export default function ResultsPage() {
                   </div>
                   <div className="p-6 bg-primary/10 rounded-lg border border-primary/20 text-center">
                     <div className="text-3xl font-bold text-primary mb-2">
-                      <CountUp end={52} />
+                      <CountUp end={58} />
                     </div>
                     <div className="text-sm text-muted-foreground font-medium">총 교육 회차</div>
                     <div className="text-xs text-muted-foreground mt-1">
@@ -1545,9 +1648,9 @@ export default function ResultsPage() {
                   <TableBody>
                     <TableRow>
                       <TableCell className="font-semibold">교육 회차</TableCell>
-                      <TableCell className="text-center">52회</TableCell>
+                      <TableCell className="text-center">58회</TableCell>
                       <TableCell className="text-center font-bold text-primary">
-                        <CountUp end={52} />회
+                        <CountUp end={58} />회
                       </TableCell>
                       <TableCell className="text-center">
                         <span className="font-bold text-emerald-600 dark:text-emerald-400">100%</span>
@@ -1565,9 +1668,9 @@ export default function ResultsPage() {
                     </TableRow>
                     <TableRow>
                       <TableCell className="font-semibold">참여 학급</TableCell>
-                      <TableCell className="text-center">52학급</TableCell>
+                      <TableCell className="text-center">58학급</TableCell>
                       <TableCell className="text-center font-bold text-primary">
-                        <CountUp end={52} />학급
+                        <CountUp end={58} />학급
                       </TableCell>
                       <TableCell className="text-center">
                         <span className="font-bold text-emerald-600 dark:text-emerald-400">100%</span>
@@ -1578,7 +1681,7 @@ export default function ResultsPage() {
                       <TableCell className="font-semibold">참여 학생</TableCell>
                       <TableCell className="text-center">-</TableCell>
                       <TableCell className="text-center font-bold text-primary">
-                        <CountUp end={777} />명
+                        <CountUp end={839} />명
                       </TableCell>
                       <TableCell className="text-center">
                         <span className="font-bold text-emerald-600 dark:text-emerald-400">100%</span>
@@ -1594,7 +1697,7 @@ export default function ResultsPage() {
             <Card className="mb-6">
               <CardContent className="pt-6">
                 <p className="leading-relaxed text-base md:text-lg">
-                  교육 밀도: 회당 평균 <span className="text-primary font-semibold">15명</span> 내외의 학생이 참여한 것은, 한편으로는 초등 저학년의 경우 소그룹 위주의 세분화 교육을
+                  교육 밀도: 회당 평균 <span className="text-primary font-semibold">14명</span> 내외의 학생이 참여한 것은, 한편으로는 초등 저학년의 경우 소그룹 위주의 세분화 교육을
                   실시하고 고학년일수록 한 회차에 더 많은 학생을 수용한 결과이다. 낮은 학년일수록 학생 개인별 체험 활동의 질을 높이기 위해
                   소규모로 운영하고, 중·고등학생은 학급 단위로 함께 참여시켜 협업 학습과 토론을 도모한 운영 전략으로 볼 수 있다.
                 </p>
@@ -1604,10 +1707,6 @@ export default function ResultsPage() {
             {/* 학년별 반응도 및 추정 만족도 카드 */}
             <Card className="mb-6">
               <CardContent className="pt-6">
-                <p className="leading-relaxed text-base md:text-lg mb-4">
-                  학년별 반응도 및 추정 만족도: 프로그램에 대한 학생들의 반응은 전반적으로 매우 긍정적이었다. 특히 초등학생들의 경우
-                  호기심과 흥미를 강하게 보이며 적극 참여하여 만족도가 가장 높았던 것으로 추정된다.
-                </p>
                 <p className="leading-relaxed text-base md:text-lg mb-4">
                   현장에서 지도교사들의 관찰에 따르면, 초등 저학년일수록 새로운 기술과 식물 재배 활동에 순수한 흥미를 보여 질문과
                   체험 참여도가 매우 높았다. 고등학생들도 진지한 태도로 임하면서도 교육용 키트를 직접 조립하고 코딩으로 장치를 제어하는
@@ -1632,6 +1731,290 @@ export default function ResultsPage() {
                 </p>
               </CardContent>
             </Card>
+
+            {/* 설문조사 만족도 분석 섹션 */}
+            <Card className="mb-6">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <BarChart3 className="w-5 h-5 text-primary" />
+                  설문조사 만족도 분석
+                </CardTitle>
+                <p className="text-sm text-muted-foreground mt-2">
+                  금산산업고등학교 학생 22명 대상 설문조사 결과 (7개 항목)
+                </p>
+              </CardHeader>
+              <CardContent>
+                {/* 전체 만족도 요약 */}
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+                  <div className="p-4 bg-gradient-to-br from-emerald-50 to-emerald-100 dark:from-emerald-950/30 dark:to-emerald-900/20 rounded-xl border border-emerald-200 dark:border-emerald-800 text-center">
+                    <div className="text-3xl font-bold text-emerald-600 dark:text-emerald-400">
+                      96.6
+                    </div>
+                    <div className="text-sm text-muted-foreground mt-1">평균 만족도</div>
+                    <div className="text-xs text-muted-foreground">(100점 만점)</div>
+                  </div>
+                  <div className="p-4 bg-gradient-to-br from-blue-50 to-blue-100 dark:from-blue-950/30 dark:to-blue-900/20 rounded-xl border border-blue-200 dark:border-blue-800 text-center">
+                    <div className="text-3xl font-bold text-blue-600 dark:text-blue-400">
+                      22
+                    </div>
+                    <div className="text-sm text-muted-foreground mt-1">응답자 수</div>
+                    <div className="text-xs text-muted-foreground">(명)</div>
+                  </div>
+                  <div className="p-4 bg-gradient-to-br from-purple-50 to-purple-100 dark:from-purple-950/30 dark:to-purple-900/20 rounded-xl border border-purple-200 dark:border-purple-800 text-center">
+                    <div className="text-3xl font-bold text-purple-600 dark:text-purple-400">
+                      5
+                    </div>
+                    <div className="text-sm text-muted-foreground mt-1">100점 만점 항목</div>
+                    <div className="text-xs text-muted-foreground">(7개 중)</div>
+                  </div>
+                  <div className="p-4 bg-gradient-to-br from-amber-50 to-amber-100 dark:from-amber-950/30 dark:to-amber-900/20 rounded-xl border border-amber-200 dark:border-amber-800 text-center">
+                    <div className="text-3xl font-bold text-amber-600 dark:text-amber-400">
+                      77%
+                    </div>
+                    <div className="text-sm text-muted-foreground mt-1">최고 매우만족 비율</div>
+                    <div className="text-xs text-muted-foreground">(신기술 체험)</div>
+                  </div>
+                </div>
+
+                {/* 항목별 만족도 점수 Bar Chart */}
+                <div className="mb-8">
+                  <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
+                    <TrendingUp className="w-5 h-5 text-primary" />
+                    항목별 만족도 점수 (100점 척도)
+                  </h3>
+                  <div className="h-80 min-h-[320px]">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart
+                        data={surveyData}
+                        layout="vertical"
+                        margin={{ top: 10, right: 30, left: 20, bottom: 10 }}
+                      >
+                        <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
+                        <XAxis
+                          type="number"
+                          domain={[0, 100]}
+                          tick={{ fill: textColor, fontSize: 12 }}
+                          tickFormatter={(value) => `${value}점`}
+                        />
+                        <YAxis
+                          type="category"
+                          dataKey="shortQuestion"
+                          tick={{ fill: textColor, fontSize: 12 }}
+                          width={100}
+                        />
+                        <Tooltip
+                          formatter={(value: number) => [`${value}점`, '만족도']}
+                          labelFormatter={(label) => {
+                            const item = surveyData.find((d) => d.shortQuestion === label);
+                            return item?.question || label;
+                          }}
+                          contentStyle={{
+                            backgroundColor: resolvedTheme === 'dark' ? '#27272a' : '#ffffff',
+                            border: '1px solid',
+                            borderColor: resolvedTheme === 'dark' ? '#3f3f46' : '#e4e4e7',
+                            borderRadius: '8px',
+                          }}
+                        />
+                        <Bar
+                          dataKey="score"
+                          fill="#10b981"
+                          radius={[0, 4, 4, 0]}
+                          name="만족도 점수"
+                        />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+
+                {/* 응답 분포 Stacked Bar Chart */}
+                <div className="mb-8">
+                  <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
+                    <Users className="w-5 h-5 text-primary" />
+                    항목별 응답 분포 (5점 척도)
+                  </h3>
+                  <div className="h-80 min-h-[320px]">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart
+                        data={surveyData}
+                        layout="vertical"
+                        margin={{ top: 10, right: 30, left: 20, bottom: 10 }}
+                      >
+                        <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
+                        <XAxis
+                          type="number"
+                          tick={{ fill: textColor, fontSize: 12 }}
+                          tickFormatter={(value) => `${value}명`}
+                        />
+                        <YAxis
+                          type="category"
+                          dataKey="shortQuestion"
+                          tick={{ fill: textColor, fontSize: 12 }}
+                          width={100}
+                        />
+                        <Tooltip
+                          formatter={(value: number, name: string) => {
+                            const labelMap: Record<string, string> = {
+                              verySatisfied: '매우 만족 (5점)',
+                              satisfied: '만족 (4점)',
+                              normal: '보통 (3점)',
+                              dissatisfied: '불만족 (2점)',
+                              veryDissatisfied: '매우 불만족 (1점)',
+                            };
+                            return [`${value}명`, labelMap[name] || name];
+                          }}
+                          contentStyle={{
+                            backgroundColor: resolvedTheme === 'dark' ? '#27272a' : '#ffffff',
+                            border: '1px solid',
+                            borderColor: resolvedTheme === 'dark' ? '#3f3f46' : '#e4e4e7',
+                            borderRadius: '8px',
+                          }}
+                        />
+                        <Legend
+                          formatter={(value) => {
+                            const labelMap: Record<string, string> = {
+                              verySatisfied: '매우 만족',
+                              satisfied: '만족',
+                              normal: '보통',
+                              dissatisfied: '불만족',
+                              veryDissatisfied: '매우 불만족',
+                            };
+                            return labelMap[value] || value;
+                          }}
+                        />
+                        <Bar dataKey="verySatisfied" stackId="a" fill={SURVEY_COLORS.verySatisfied} name="verySatisfied" />
+                        <Bar dataKey="satisfied" stackId="a" fill={SURVEY_COLORS.satisfied} name="satisfied" />
+                        <Bar dataKey="normal" stackId="a" fill={SURVEY_COLORS.normal} name="normal" />
+                        <Bar dataKey="dissatisfied" stackId="a" fill={SURVEY_COLORS.dissatisfied} name="dissatisfied" />
+                        <Bar dataKey="veryDissatisfied" stackId="a" fill={SURVEY_COLORS.veryDissatisfied} name="veryDissatisfied" />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+
+                {/* 설문조사 상세 테이블 */}
+                <div className="mb-6">
+                  <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
+                    <FileText className="w-5 h-5 text-primary" />
+                    설문 항목별 상세 결과
+                  </h3>
+                  <div className="overflow-x-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="min-w-[200px]">설문 항목</TableHead>
+                          <TableHead className="text-center">매우만족<br/>(5점)</TableHead>
+                          <TableHead className="text-center">만족<br/>(4점)</TableHead>
+                          <TableHead className="text-center">보통<br/>(3점)</TableHead>
+                          <TableHead className="text-center">불만족<br/>(2점)</TableHead>
+                          <TableHead className="text-center">매우불만족<br/>(1점)</TableHead>
+                          <TableHead className="text-center">점수</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {surveyData.map((item) => (
+                          <TableRow key={item.id}>
+                            <TableCell className="font-medium text-sm">
+                              {item.question}
+                            </TableCell>
+                            <TableCell className="text-center">
+                              <span className="inline-flex items-center justify-center min-w-[60px] px-2 py-1 bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 rounded-md text-sm font-medium">
+                                {item.verySatisfied}명 ({Math.round((item.verySatisfied / 22) * 100)}%)
+                              </span>
+                            </TableCell>
+                            <TableCell className="text-center">
+                              <span className="inline-flex items-center justify-center min-w-[60px] px-2 py-1 bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400 rounded-md text-sm">
+                                {item.satisfied}명 ({Math.round((item.satisfied / 22) * 100)}%)
+                              </span>
+                            </TableCell>
+                            <TableCell className="text-center">
+                              <span className="inline-flex items-center justify-center min-w-[60px] px-2 py-1 bg-amber-50 dark:bg-amber-900/20 text-amber-600 dark:text-amber-400 rounded-md text-sm">
+                                {item.normal}명 ({Math.round((item.normal / 22) * 100)}%)
+                              </span>
+                            </TableCell>
+                            <TableCell className="text-center">
+                              <span className="inline-flex items-center justify-center min-w-[60px] px-2 py-1 bg-orange-50 dark:bg-orange-900/20 text-orange-600 dark:text-orange-400 rounded-md text-sm">
+                                {item.dissatisfied}명
+                              </span>
+                            </TableCell>
+                            <TableCell className="text-center">
+                              <span className="inline-flex items-center justify-center min-w-[60px] px-2 py-1 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 rounded-md text-sm">
+                                {item.veryDissatisfied}명
+                              </span>
+                            </TableCell>
+                            <TableCell className="text-center">
+                              <span className={`inline-flex items-center justify-center min-w-[60px] px-3 py-1 rounded-md text-sm font-bold ${
+                                item.score === 100
+                                  ? 'bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300'
+                                  : 'bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300'
+                              }`}>
+                                {item.score}/100
+                              </span>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* 설문조사 결과 분석 설명 */}
+            <Card className="mb-6">
+              <CardContent className="pt-6">
+                <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
+                  <Lightbulb className="w-5 h-5 text-primary" />
+                  설문조사 결과 분석
+                </h3>
+                <div className="space-y-4">
+                  <p className="leading-relaxed text-base md:text-lg">
+                    금산산업고등학교 학생 <span className="text-primary font-bold">22명</span>을 대상으로 실시한 설문조사 결과,
+                    전체 <span className="text-primary font-bold">7개 항목</span>의 평균 만족도는{' '}
+                    <span className="text-primary font-bold text-xl">96.6점</span>(100점 만점)으로 매우 높은 수준을 기록했습니다.
+                  </p>
+                  
+                  <div className="p-4 bg-gradient-to-r from-emerald-50 to-teal-50 dark:from-emerald-950/20 dark:to-teal-950/20 rounded-lg border border-emerald-200 dark:border-emerald-800">
+                    <h4 className="font-semibold text-emerald-700 dark:text-emerald-300 mb-2">주요 인사이트</h4>
+                    <ul className="space-y-2 text-sm md:text-base">
+                      <li className="flex items-start gap-2">
+                        <CheckCircle2 className="w-5 h-5 text-emerald-600 dark:text-emerald-400 mt-0.5 flex-shrink-0" />
+                        <span>
+                          <strong>5개 항목이 100점 만점</strong>을 달성했으며, 특히 &apos;강의 재미&apos;, &apos;미래 가능성 이해&apos;, 
+                          &apos;기술 이해&apos;, &apos;신기술 체험&apos;, &apos;스마트팜 개념&apos; 항목에서 모든 학생이 만족 이상으로 응답했습니다.
+                        </span>
+                      </li>
+                      <li className="flex items-start gap-2">
+                        <CheckCircle2 className="w-5 h-5 text-emerald-600 dark:text-emerald-400 mt-0.5 flex-shrink-0" />
+                        <span>
+                          <strong>&apos;신기술 체험&apos; 항목이 가장 높은 매우만족 비율(77%)</strong>을 기록하여, 
+                          사물인터넷 하우스와 디지털 프린팅 등 실습 중심 체험 활동에 대한 학생들의 호응이 가장 높았음을 보여줍니다.
+                        </span>
+                      </li>
+                      <li className="flex items-start gap-2">
+                        <CheckCircle2 className="w-5 h-5 text-emerald-600 dark:text-emerald-400 mt-0.5 flex-shrink-0" />
+                        <span>
+                          <strong>&apos;진로 탐색 도움&apos;(90점)과 &apos;내년 참여 의향&apos;(86점)</strong> 항목은 상대적으로 낮은 점수를 기록했으나, 
+                          여전히 높은 만족도를 유지하고 있어 프로그램의 진로 교육적 가치와 지속 가능성을 확인할 수 있습니다.
+                        </span>
+                      </li>
+                      <li className="flex items-start gap-2">
+                        <CheckCircle2 className="w-5 h-5 text-emerald-600 dark:text-emerald-400 mt-0.5 flex-shrink-0" />
+                        <span>
+                          <strong>불만족 또는 매우 불만족 응답이 전무</strong>하여, 프로그램 전반에 걸쳐 학생들의 부정적 반응이 없었음을 확인할 수 있습니다.
+                        </span>
+                      </li>
+                    </ul>
+                  </div>
+
+                  <p className="leading-relaxed text-base md:text-lg">
+                    이러한 설문조사 결과는 스마트팜 교육 프로그램이 학생들에게 <strong className="text-primary">높은 교육적 만족감</strong>과{' '}
+                    <strong className="text-primary">실질적인 학습 효과</strong>를 제공했음을 객관적으로 입증합니다.
+                    특히 체험 중심의 교육 방식이 학생들의 흥미와 참여도를 높이는 데 효과적이었음을 확인할 수 있습니다.
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+
             <a
               href="#top"
               className="inline-flex items-center gap-2 mt-6 px-4 py-2 text-sm font-medium text-primary bg-primary/10 rounded-lg hover:bg-primary/20 transition-colors"
@@ -1965,7 +2348,7 @@ export default function ResultsPage() {
                       </div>
                       <div>
                         <div className="text-3xl font-bold text-emerald-600 dark:text-emerald-400">
-                          <CountUp end={52} />
+                          <CountUp end={58} />
                         </div>
                         <div className="text-sm text-muted-foreground">학급 참여</div>
                       </div>
@@ -1978,7 +2361,7 @@ export default function ResultsPage() {
                       </div>
                       <div>
                         <div className="text-3xl font-bold text-blue-600 dark:text-blue-400">
-                          <CountUp end={777} />
+                          <CountUp end={839} />
                         </div>
                         <div className="text-sm text-muted-foreground">학생 참여</div>
                       </div>
@@ -1989,8 +2372,8 @@ export default function ResultsPage() {
                 <div className="space-y-4 leading-relaxed text-base md:text-lg text-center">
                   <p className="text-lg md:text-xl font-semibold">
                     금산교육발전특구 스마트팜 교육 프로그램은{' '}
-                    <span className="text-primary text-3xl font-bold">52</span>개 학급,{' '}
-                    <span className="text-primary text-3xl font-bold">777</span>명 참여라는 양적 성과와 높은 참여율, 학년별 맞춤 효과,
+                    <span className="text-primary text-3xl font-bold">58</span>개 학급,{' '}
+                    <span className="text-primary text-3xl font-bold">839</span>명 참여라는 양적 성과와 높은 참여율, 학년별 맞춤 효과,
                     긍정적인 만족도 등의 질적 성과를 동시에 거둔 것으로 분석됩니다.
                   </p>
                   <p>
@@ -2165,7 +2548,12 @@ export default function ResultsPage() {
                 <ImageIcon className="w-6 h-6 text-primary" />
                 현장 교육 사진
                 <button
-                  onClick={fetchImages}
+                  onClick={() => {
+                    imageErrorTriesRef.current.clear(); // 에러 시도 목록 초기화
+                    setCurrentPage(1); // 최신 이미지부터 표시
+                    // 새로고침 시 캐시 무효화하여 최신 이미지 가져오기 (페이지 1 명시)
+                    fetchImages(true, 1);
+                  }}
                   disabled={isLoadingImages}
                   className="ml-auto p-2 hover:bg-muted rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                   aria-label="사진 새로고침"
@@ -2224,13 +2612,27 @@ export default function ResultsPage() {
                     
                     // 프록시 URL을 우선 사용 (서버에서 인증 처리하여 안정적)
                     // 프록시 URL이 실패하면 썸네일로 대체
-                    const imageUrl = image.apiUrl || image.downloadUrl || (image.thumbnailLink ? getOptimizedThumbnailUrl(image.thumbnailLink, 640) : '') || image.webViewLink;
+                    const proxyUrl = image.apiUrl || image.downloadUrl;
+                    const thumbnailUrl = image.thumbnailLink ? getOptimizedThumbnailUrl(image.thumbnailLink, 1280) : '';
+                    const imageUrl = proxyUrl || thumbnailUrl || image.webViewLink || '';
                     
                     // 해당 이미지의 시도한 URL 목록 가져오기
                     if (!imageErrorTriesRef.current.has(image.id)) {
                       imageErrorTriesRef.current.set(image.id, new Set());
                     }
                     const triedUrls = imageErrorTriesRef.current.get(image.id)!;
+                    
+                    // URL이 프록시 URL인지 확인하는 헬퍼 함수
+                    const isProxyUrl = (url: string) => {
+                      if (!proxyUrl) return false;
+                      try {
+                        const urlObj = new URL(url, window.location.origin);
+                        const proxyUrlObj = new URL(proxyUrl, window.location.origin);
+                        return urlObj.pathname === proxyUrlObj.pathname;
+                      } catch {
+                        return url.includes(proxyUrl) || url.endsWith(proxyUrl);
+                      }
+                    };
                     
                     return (
                       <div
@@ -2254,13 +2656,19 @@ export default function ResultsPage() {
                             // 대체 URL 순차적으로 시도
                             let nextUrl = '';
                             
-                            // 프록시 URL(apiUrl 또는 downloadUrl)이 실패한 경우
-                            if (currentSrc === image.apiUrl || currentSrc === image.downloadUrl) {
-                              // 썸네일 시도
+                            // 프록시 URL이 실패한 경우
+                            if (isProxyUrl(currentSrc)) {
+                              // 더 큰 썸네일 시도 (1280px)
                               if (image.thumbnailLink) {
-                                const thumbnailUrl = getOptimizedThumbnailUrl(image.thumbnailLink, 640);
-                                if (!triedUrls.has(thumbnailUrl)) {
-                                  nextUrl = thumbnailUrl;
+                                const largeThumbnailUrl = getOptimizedThumbnailUrl(image.thumbnailLink, 1280);
+                                if (!triedUrls.has(largeThumbnailUrl)) {
+                                  nextUrl = largeThumbnailUrl;
+                                } else {
+                                  // 1280px가 이미 시도되었다면 640px 시도
+                                  const mediumThumbnailUrl = getOptimizedThumbnailUrl(image.thumbnailLink, 640);
+                                  if (!triedUrls.has(mediumThumbnailUrl)) {
+                                    nextUrl = mediumThumbnailUrl;
+                                  }
                                 }
                               }
                               // 썸네일이 없거나 이미 시도했다면 webViewLink 시도
@@ -2269,9 +2677,16 @@ export default function ResultsPage() {
                               }
                             }
                             // 썸네일이 실패한 경우
-                            else if (image.thumbnailLink && currentSrc.includes(image.thumbnailLink)) {
+                            else if (image.thumbnailLink && (currentSrc.includes(image.thumbnailLink) || currentSrc.includes('thumbnail'))) {
+                              // 더 작은 썸네일 시도
+                              if (currentSrc.includes('=s1280')) {
+                                const mediumThumbnailUrl = getOptimizedThumbnailUrl(image.thumbnailLink, 640);
+                                if (!triedUrls.has(mediumThumbnailUrl)) {
+                                  nextUrl = mediumThumbnailUrl;
+                                }
+                              }
                               // webViewLink 시도
-                              if (image.webViewLink && !triedUrls.has(image.webViewLink)) {
+                              if (!nextUrl && image.webViewLink && !triedUrls.has(image.webViewLink)) {
                                 nextUrl = image.webViewLink;
                               }
                             }
@@ -2387,6 +2802,9 @@ export default function ResultsPage() {
                 if (!open) {
                   setSelectedImage(null);
                   setImageDimensions(null);
+                  imageLoadSuccessRef.current = false; // 모달 닫을 때 플래그 리셋
+                } else {
+                  imageLoadSuccessRef.current = false; // 모달 열 때 플래그 리셋
                 }
               }}
             >
@@ -2438,7 +2856,10 @@ export default function ResultsPage() {
                       <img
                         key={selectedImage.id}
                         // 모달에서는 원본 이미지를 우선 사용하여 고해상도 이미지 제공
-                        src={selectedImage.apiUrl || selectedImage.downloadUrl || selectedImage.thumbnailLink || selectedImage.webViewLink}
+                        // 프록시 URL이 실패할 경우 더 큰 썸네일(1920px) 사용
+                        src={selectedImage.apiUrl || selectedImage.downloadUrl || 
+                             (selectedImage.thumbnailLink ? getOptimizedThumbnailUrl(selectedImage.thumbnailLink, 1920) : '') || 
+                             selectedImage.webViewLink}
                         alt={selectedImage.name || '스마트팜 교육 현장'}
                         className="w-auto h-auto"
                         style={{
@@ -2453,71 +2874,149 @@ export default function ResultsPage() {
                           const img = e.target as HTMLImageElement;
                           const naturalWidth = img.naturalWidth;
                           const naturalHeight = img.naturalHeight;
-                          setImageDimensions({
-                            width: naturalWidth,
-                            height: naturalHeight,
-                          });
                           
-                          // 이미지 크기에 맞게 스타일 업데이트
-                          const aspectRatio = naturalWidth / naturalHeight;
-                          const maxWidth = Math.min(window.innerWidth * 0.95, window.innerHeight * 0.95 * aspectRatio);
-                          const maxHeight = Math.min(window.innerHeight * 0.95, window.innerWidth * 0.95 / aspectRatio);
-                          
-                          img.style.maxWidth = `${maxWidth}px`;
-                          img.style.maxHeight = `${maxHeight}px`;
-                          
-                          console.log('이미지 로드 완료:', {
-                            naturalWidth,
-                            naturalHeight,
-                            aspectRatio: aspectRatio.toFixed(2),
-                            calculatedMaxWidth: maxWidth,
-                            calculatedMaxHeight: maxHeight,
-                          });
+                          // 이미지가 실제로 로드되었는지 확인
+                          if (naturalWidth > 0 && naturalHeight > 0) {
+                            imageLoadSuccessRef.current = true;
+                            setImageDimensions({
+                              width: naturalWidth,
+                              height: naturalHeight,
+                            });
+                            
+                            // 이미지 크기에 맞게 스타일 업데이트
+                            const aspectRatio = naturalWidth / naturalHeight;
+                            const maxWidth = Math.min(window.innerWidth * 0.95, window.innerHeight * 0.95 * aspectRatio);
+                            const maxHeight = Math.min(window.innerHeight * 0.95, window.innerWidth * 0.95 / aspectRatio);
+                            
+                            img.style.maxWidth = `${maxWidth}px`;
+                            img.style.maxHeight = `${maxHeight}px`;
+                            
+                            if (process.env.NODE_ENV === 'development') {
+                              console.log('이미지 로드 완료:', {
+                                naturalWidth,
+                                naturalHeight,
+                                aspectRatio: aspectRatio.toFixed(2),
+                                calculatedMaxWidth: maxWidth,
+                                calculatedMaxHeight: maxHeight,
+                              });
+                            }
+                          }
                         }}
                         onError={(e) => {
-                          const target = e.target as HTMLImageElement;
-                          const triedUrls = [target.src];
-                          
-                          console.error('이미지 로드 실패:', {
-                            currentSrc: target.src,
-                            triedUrls,
-                            availableUrls: {
-                              apiUrl: selectedImage.apiUrl,
-                              thumbnailLink: selectedImage.thumbnailLink,
-                              downloadUrl: selectedImage.downloadUrl,
-                              downloadUrl2: selectedImage.downloadUrl2,
-                              webViewLink: selectedImage.webViewLink,
-                            },
-                            imageId: selectedImage.id,
-                            imageName: selectedImage.name,
-                          });
-                          
-                          // 네트워크 에러 확인
-                          if (target.src.startsWith('/api/')) {
-                            console.error('프록시 URL 실패, 썸네일로 대체 시도');
-                          }
-                          
-                          // 대체 URL 순차적으로 시도
-                          // 1. 프록시 URL(apiUrl 또는 downloadUrl)이 실패한 경우 썸네일 시도
-                          if ((selectedImage.apiUrl && target.src.includes(selectedImage.apiUrl)) || 
-                              (selectedImage.downloadUrl && target.src.includes(selectedImage.downloadUrl))) {
-                            // 프록시 URL이 실패했으므로 썸네일로 대체
-                            if (selectedImage.thumbnailLink && !triedUrls.includes(selectedImage.thumbnailLink)) {
-                              target.src = selectedImage.thumbnailLink;
-                              triedUrls.push(selectedImage.thumbnailLink);
-                            } else if (selectedImage.webViewLink && !triedUrls.includes(selectedImage.webViewLink)) {
-                              target.src = selectedImage.webViewLink;
-                              triedUrls.push(selectedImage.webViewLink);
+                          try {
+                            const target = e.target as HTMLImageElement;
+                            
+                            // selectedImage가 없으면 처리하지 않음
+                            if (!selectedImage) {
+                              return;
+                            }
+                            
+                            // 이미지가 이미 성공적으로 로드되었다면 onError를 무시
+                            // (이미지가 로드된 후 추가적인 요청이 실패할 수 있음)
+                            const naturalWidth = target.naturalWidth;
+                            const naturalHeight = target.naturalHeight;
+                            
+                            // 이미지가 실제로 로드되어 있으면 에러를 무시
+                            if (naturalWidth > 0 && naturalHeight > 0) {
+                              // 이미지가 성공적으로 로드되었으므로 에러를 무시
+                              return;
+                            }
+                            
+                            // imageLoadSuccessRef도 확인
+                            if (imageLoadSuccessRef.current) {
+                              return;
+                            }
+                            
+                            const triedUrls = [target.src];
+                            
+                            // 프록시 URL인지 확인
+                            const isProxyUrl = (url: string) => {
+                              const proxyUrl = selectedImage.apiUrl || selectedImage.downloadUrl;
+                              if (!proxyUrl) return false;
+                              try {
+                                const urlObj = new URL(url, window.location.origin);
+                                const proxyUrlObj = new URL(proxyUrl, window.location.origin);
+                                return urlObj.pathname === proxyUrlObj.pathname;
+                              } catch {
+                                return url.includes(proxyUrl) || url.endsWith(proxyUrl);
+                              }
+                            };
+                            
+                            // 대체 URL 순차적으로 시도
+                            let nextUrl = '';
+                            
+                            // 프록시 URL이 실패한 경우
+                            if (isProxyUrl(target.src)) {
+                              // 더 큰 썸네일 시도 (1920px -> 1280px -> 640px)
+                              if (selectedImage.thumbnailLink) {
+                                const sizes = [1920, 1280, 640];
+                                for (const size of sizes) {
+                                  const thumbnailUrl = getOptimizedThumbnailUrl(selectedImage.thumbnailLink, size);
+                                  if (!triedUrls.includes(thumbnailUrl)) {
+                                    nextUrl = thumbnailUrl;
+                                    break;
+                                  }
+                                }
+                              }
+                              // 썸네일이 없거나 이미 시도했다면 webViewLink 시도
+                              if (!nextUrl && selectedImage.webViewLink && !triedUrls.includes(selectedImage.webViewLink)) {
+                                nextUrl = selectedImage.webViewLink;
+                              }
+                            }
+                            // 썸네일이 실패한 경우
+                            else if (selectedImage.thumbnailLink && (target.src.includes(selectedImage.thumbnailLink) || target.src.includes('thumbnail'))) {
+                              // 더 작은 썸네일 시도
+                              const currentSize = target.src.match(/=s(\d+)/)?.[1];
+                              if (currentSize) {
+                                const sizes = [1280, 640, 320];
+                                for (const size of sizes) {
+                                  if (parseInt(currentSize) > size) {
+                                    const thumbnailUrl = getOptimizedThumbnailUrl(selectedImage.thumbnailLink, size);
+                                    if (!triedUrls.includes(thumbnailUrl)) {
+                                      nextUrl = thumbnailUrl;
+                                      break;
+                                    }
+                                  }
+                                }
+                              }
+                              // webViewLink 시도
+                              if (!nextUrl && selectedImage.webViewLink && !triedUrls.includes(selectedImage.webViewLink)) {
+                                nextUrl = selectedImage.webViewLink;
+                              }
+                            }
+                            // webViewLink가 실패한 경우
+                            else if (selectedImage.webViewLink && target.src === selectedImage.webViewLink) {
+                              // 더 이상 대체 URL이 없음
+                            }
+                            
+                            if (nextUrl) {
+                              // 대체 URL이 있으면 조용히 전환 (에러 로그 출력하지 않음)
+                              triedUrls.push(nextUrl);
+                              target.src = nextUrl;
                             } else {
+                              // 모든 URL 실패 시에만 에러 로그 출력 및 플레이스홀더 표시
+                              if (process.env.NODE_ENV === 'development') {
+                                console.error('이미지 로드 실패 (모든 URL 시도 완료):', {
+                                  currentSrc: target.src,
+                                  triedUrls,
+                                  availableUrls: {
+                                    apiUrl: selectedImage.apiUrl || null,
+                                    thumbnailLink: selectedImage.thumbnailLink || null,
+                                    downloadUrl: selectedImage.downloadUrl || null,
+                                    webViewLink: selectedImage.webViewLink || null,
+                                  },
+                                  imageId: selectedImage.id || null,
+                                  imageName: selectedImage.name || null,
+                                });
+                              }
                               // 모든 URL 실패 시 플레이스홀더
                               target.src = `data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='800' height='600'%3E%3Crect fill='%23ddd' width='800' height='600'/%3E%3Ctext fill='%23999' font-family='sans-serif' font-size='24' x='50%25' y='50%25' text-anchor='middle' dy='.3em'%3E이미지를 불러올 수 없습니다%3C/text%3E%3C/svg%3E`;
                             }
-                          } else if (selectedImage.thumbnailLink && !triedUrls.includes(selectedImage.thumbnailLink)) {
-                            target.src = selectedImage.thumbnailLink;
-                            triedUrls.push(selectedImage.thumbnailLink);
-                          } else {
-                            // 모든 URL 실패 시 플레이스홀더
-                            target.src = `data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='800' height='600'%3E%3Crect fill='%23ddd' width='800' height='600'/%3E%3Ctext fill='%23999' font-family='sans-serif' font-size='24' x='50%25' y='50%25' text-anchor='middle' dy='.3em'%3E이미지를 불러올 수 없습니다%3C/text%3E%3C/svg%3E`;
+                          } catch (error) {
+                            // 에러 핸들러 자체에서 에러가 발생한 경우 조용히 처리
+                            if (process.env.NODE_ENV === 'development') {
+                              console.error('이미지 에러 핸들러 오류:', error);
+                            }
                           }
                         }}
                       />
