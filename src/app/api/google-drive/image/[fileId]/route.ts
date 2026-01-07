@@ -37,10 +37,11 @@ export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ fileId: string }> | { fileId: string } }
 ) {
+  // Next.js 16에서는 params가 Promise일 수 있음
+  const resolvedParams = await Promise.resolve(params);
+  const { fileId } = resolvedParams;
+  
   try {
-    // Next.js 16에서는 params가 Promise일 수 있음
-    const resolvedParams = await Promise.resolve(params);
-    const { fileId } = resolvedParams;
 
     console.log('이미지 프록시 요청:', { fileId });
 
